@@ -13,6 +13,7 @@ Analytics portfolio project: big-data ETL into Databricks, then Tableau dashboar
 1. **One small step at a time.** Run a step, show the key output, say what it means and what you propose next. Wait for agreement before moving to the next step.
 2. **Pilot with the smallest data first** (`markets.parquet`, one month, one column) before scaling.
 3. **Ask before:** any download or remote scan likely to transfer more than 1 GB, any upload to Databricks, deleting anything on D:, installing packages, or changing the repo structure.
+   - **Exception:** the bronze extraction script may delete its own `month=MM.tmp` staging folders (left by an interrupted run) without asking. Nothing else.
 4. **Read only the columns a step needs.** Always read the Hugging Face `main` branch.
 5. **Make every step resumable:** check what's already on disk and skip it; keep a manifest of completed months.
 6. **Never put data in the repo.** Outputs go to `D:\polymarket-economy-data`; keep `.gitignore` covering data and `.venv`.
