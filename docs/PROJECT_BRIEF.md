@@ -95,7 +95,9 @@ Polymarket Data API ─┘            every layer                               
 | `orderfilled.parquet` | 127,200,963,857 | `ee81933332977deb43aaa5b5f1257697f50dadb1f8943b629d4bdb19d2068677` |
 | `quant.parquet` | 44,657,939,800 | `1700f0153d642e89d7868c5f6b288e0c513634faea45516826069b361026722a` |
 
-**Row counts:** only `markets` (4,049,900) is verified against a local, checksum-verified copy (test 0). The other four are the dataset card's figures and are unverified.
+**Row counts:** `markets` (4,049,900) is verified against a local, checksum-verified copy (test 0). `trades` (1,266,885,846) and `users` (2,026,673,731) are verified from the Parquet footers (test A). `orderfilled` and `quant` are the dataset card's figures and are unverified.
+
+**Where the bytes are** (test A, footer column sizes): `transaction_hash` is 26.02 GB of `trades` (56.8%) and 27.63 GB of `users` (45.5%). Dropping the columns that can be re-derived from `markets` (`condition_id`, `event_id`, `asset_id`) would save only 1.1 GB on `trades` and 4.7 GB on `users`.
 
 **Key columns**
 - `trades`: `timestamp` (unix s), `block_number`, `transaction_hash`, `log_index`, `contract`, `market_id`, `condition_id`, `event_id`, `maker`, `taker`, `price`, `usd_amount`, `token_amount`, `maker_direction`, `taker_direction`, `nonusdc_side`, `asset_id`
@@ -149,7 +151,8 @@ Polymarket Data API ─┘            every layer                               
 
 The source is files, not a database, so "pull only what we need" works through Parquet itself:
 - **Column projection always works.** Read only the columns a step needs.
-- **Row-group skipping only works if the file is sorted by the filter column.** That isn't guaranteed (gap re-fetches were appended), so check the footers first (test A).
+- **Row-group skipping works at month level (test A, 12 Oct 2026).** In both `trades` (1,261 row groups) and `users` (2,005), every row group lies inside one UTC calendar month, so a one-month filter reads only that month's row groups. Within a month the groups are not time-sorted (about 93% overlap an earlier group), so day-level filters skip little. The footers are 2.8 MB and 3.4 MB.
+- **2026 dominates.** 86% of `trades` rows fall in Jan–Oct 2026; March 2026 alone is 16.2% (205.0M rows, 6.90 GB compressed in the source with all columns). Months over the file limit are split into several part files inside the month folder, not trimmed by dropping columns.
 
 **Ingestion loop (one month at a time):**
 1. On the laptop, DuckDB reads `hf://datasets/SII-WANGZJ/Polymarket_data@main/<file>` remotely, projecting only the needed columns and filtering to one month.
@@ -252,6 +255,8 @@ Pilot with the smallest data first. Read only the columns each test needs. Save 
 | 8 | 2026-10-12 | Publish aggregates only; suppress cells under 10 wallets | Pseudonymous data on a public platform |
 | 12 | 2026-10-12 | Listing scorecard separates recurring crypto series from one-off events | Test 0: "up or down" slugs are 19.71% of markets, 10.82% of `markets.volume`; 44.19% of markets have zero volume |
 | 13 | 2026-10-12 | Market close times come from `trades`, not `markets.end_date` / `created_at` | Test 0: 32,720 markets with `end_date` before `created_at`; `end_date` spans 2011–2031 |
+| 14 | 2026-10-12 | The calendar month is the ingestion unit; monthly filters rely on row-group skipping | Test A: no row group in `trades` or `users` spans a month boundary; groups are unsorted within a month |
+| 15 | 2026-10-12 | A month over the 3 GB file limit is split into multiple part files in its month folder; needed columns are not dropped to fit | Test A column sizes: dropping re-derivable columns saves 1.1 GB of 45.84 (`trades`) and 4.7 GB of 60.75 (`users`), and does not change the file count for any month |
 | 9 | pending | Headline cohort: World Cup 2026 or US election 2024 | Test C |
 | 10 | pending | History window in scope | Tests A, F |
 | 11 | pending | Bot / market-maker rule | Test D |
