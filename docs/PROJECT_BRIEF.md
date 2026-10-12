@@ -155,8 +155,8 @@ The source is files, not a database, so "pull only what we need" works through P
 - **2026 dominates.** 86% of `trades` rows fall in Jan–Oct 2026; March 2026 alone is 16.2% (205.0M rows, 6.90 GB compressed in the source with all columns). Months over the file limit are split into several part files inside the month folder, not trimmed by dropping columns.
 
 **Ingestion loop (one month at a time):**
-1. On the laptop, DuckDB reads `hf://datasets/SII-WANGZJ/Polymarket_data@main/<file>` remotely, projecting only the needed columns and filtering to one month.
-2. Write `D:\polymarket-economy-data\bronze\<table>\year=YYYY\month=MM\part.parquet` (target under 3 GB).
+1. On the laptop, DuckDB reads `hf://datasets/SII-WANGZJ/Polymarket_data@main/<file>` remotely, filtering to one month. Bronze keeps all source columns (decision 16).
+2. Write `D:\polymarket-economy-data\bronze\<table>\year=YYYY\month=MM\part-NN.parquet` (`part-00`, `part-01`, …; planning target 2.5 GB per file, limit 3 GB). From the source's compressed sizes this is 58 files for `trades` and 63 for `users` over 48 months; only 2026 months need more than one.
 3. Upload to a Unity Catalog Volume.
 4. Log the month as done in a manifest, so runs resume after interruption. Optionally delete the local copy.
 
@@ -257,6 +257,7 @@ Pilot with the smallest data first. Read only the columns each test needs. Save 
 | 13 | 2026-10-12 | Market close times come from `trades`, not `markets.end_date` / `created_at` | Test 0: 32,720 markets with `end_date` before `created_at`; `end_date` spans 2011–2031 |
 | 14 | 2026-10-12 | The calendar month is the ingestion unit; monthly filters rely on row-group skipping | Test A: no row group in `trades` or `users` spans a month boundary; groups are unsorted within a month |
 | 15 | 2026-10-12 | A month over the 3 GB file limit is split into multiple part files in its month folder; needed columns are not dropped to fit | Test A column sizes: dropping re-derivable columns saves 1.1 GB of 45.84 (`trades`) and 4.7 GB of 60.75 (`users`), and does not change the file count for any month |
+| 16 | 2026-10-12 | Bronze keeps all source columns (17 in `trades`, 14 in `users`); files are named `part-NN.parquet` for every month | Test A column sizes: all columns = 45.84 GB and 60.75 GB; dropping re-derivable columns leaves the per-month file counts unchanged (58 and 63) |
 | 9 | pending | Headline cohort: World Cup 2026 or US election 2024 | Test C |
 | 10 | pending | History window in scope | Tests A, F |
 | 11 | pending | Bot / market-maker rule | Test D |
