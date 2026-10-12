@@ -1,17 +1,21 @@
-"""Write one month of one table to bronze.
+"""Write one true UTC month of one table to bronze.
 
     python scripts/04_bronze_month.py trades 2024 12
 
-Reads hf://datasets/SII-WANGZJ/Polymarket_data@main/<table>.parquet, filtered to one UTC
-calendar month (row-group skipping, test A), all columns, and writes
+Reads hf://datasets/SII-WANGZJ/Polymarket_data@main/<table>.parquet, all columns, and writes
     <data-root>\\bronze\\<table>\\year=YYYY\\month=MM\\part-NN.parquet
 A month larger than --target-gb is split into equal-row part files.
 
+The month is cut by BLOCK RANGE, not by the dataset's `timestamp` column, which is wrong by
+hours in places (brief section 9, concern 11). The first block of each true UTC month comes
+from lookup\\month_bounds.csv, built from real Polygon block times by 06_block_times.py.
+
 Resumable: a month already in bronze\\_manifest.jsonl is skipped. The month is written to a
-staging folder and only renamed into place after its row count matches the source footer.
-A staging folder left by an interrupted run is removed and the month is started again.
+staging folder and only renamed into place after its row count matches a separate remote
+count. A staging folder left by an interrupted run is removed and the month is started again.
 """
 import argparse
+import csv
 import json
 import shutil
 import sys
@@ -24,25 +28,20 @@ import duckdb
 
 REPO = "SII-WANGZJ/Polymarket_data"
 DEFAULT_DATA_ROOT = Path(r"D:\polymarket-economy-data")
-SIZES_DIR = DEFAULT_DATA_ROOT / "eda"  # A_column_sizes_<table>.parquet from 03_column_sizing.py
+MONTH_BOUNDS = DEFAULT_DATA_ROOT / "lookup" / "month_bounds.csv"
 LIMIT_BYTES = 3_000_000_000
 
 
-def month_bounds(year: int, month: int) -> tuple[int, int]:
-    start = datetime(year, month, 1, tzinfo=timezone.utc)
-    end = datetime(year + month // 12, month % 12 + 1, 1, tzinfo=timezone.utc)
-    return int(start.timestamp()), int(end.timestamp())
-
-
-def expected_from_footer(con, table: str, year: int, month: int) -> tuple[int, int]:
-    sizes = SIZES_DIR / f"A_column_sizes_{table}.parquet"
-    if not sizes.exists():
-        raise SystemExit(f"{sizes} not found. Run 03_column_sizing.py first.")
-    rows, source_bytes = con.execute(f"""
-        SELECT coalesce(sum(row_group_num_rows) FILTER (column_name = 'timestamp'), 0),
-               coalesce(sum(total_compressed_size), 0)
-        FROM read_parquet('{sizes.as_posix()}') WHERE month = '{year:04d}-{month:02d}'""").fetchone()
-    return int(rows), int(source_bytes)
+def block_range(year: int, month: int) -> tuple[int, int | None]:
+    """First block of the month and first block of the next month (None = open-ended)."""
+    if not MONTH_BOUNDS.exists():
+        raise SystemExit(f"{MONTH_BOUNDS} not found. Run 06_block_times.py (anchors, then months) first.")
+    with MONTH_BOUNDS.open(newline="", encoding="utf-8") as f:
+        first = {r["month"]: int(r["first_block"]) for r in csv.DictReader(f)}
+    this, nxt = f"{year:04d}-{month:02d}", f"{year + month // 12:04d}-{month % 12 + 1:02d}"
+    if this not in first:
+        raise SystemExit(f"{this} is not in {MONTH_BOUNDS}.")
+    return first[this], first.get(nxt)
 
 
 def source_commit() -> str:
@@ -85,26 +84,28 @@ def main() -> None:
     if final_dir.exists():
         raise SystemExit(f"{final_dir} exists but is not in the manifest. Inspect it before re-running.")
 
+    first_block, end_block = block_range(year, month)
+    where = f"block_number >= {first_block}" + (f" AND block_number < {end_block}" if end_block else "")
+    source = args.source or f"hf://datasets/{REPO}@main/{table}.parquet"
+    target_bytes = int(args.target_gb * 1e9)
+
     con = duckdb.connect()
     con.execute("SET TimeZone = 'UTC'")
     con.execute("SET preserve_insertion_order = false")  # lower memory; order is not needed in bronze
 
-    expected_rows, source_bytes = expected_from_footer(con, table, year, month)
-    if expected_rows == 0:
-        raise SystemExit(f"No rows for {table} {year:04d}-{month:02d} in the source footer.")
-    source = args.source or f"hf://datasets/{REPO}@main/{table}.parquet"
-    lo, hi = month_bounds(year, month)
-    target_bytes = int(args.target_gb * 1e9)
-    print(f"{table} {year:04d}-{month:02d}: expecting {expected_rows:,} rows, "
-          f"{source_bytes / 1e9:.3f} GB compressed in the source")
+    print(f"{table} {year:04d}-{month:02d}: blocks {first_block:,} to "
+          f"{f'{end_block - 1:,}' if end_block else 'end of file'}")
     print(f"Source: {source}")
+    # Independent row count: a separate remote pass over block_number only.
+    expected_rows = con.execute(f"SELECT count(*) FROM read_parquet('{source}') WHERE {where}").fetchone()[0]
+    print(f"Remote count: {expected_rows:,} rows")
+    if expected_rows == 0:
+        raise SystemExit("No rows in that block range.")
 
     if staging.exists():
         print(f"Removing staging folder from an interrupted run: {staging}")
         shutil.rmtree(staging)
-    staging.parent.mkdir(parents=True, exist_ok=True)
-
-    staging.mkdir()
+    staging.mkdir(parents=True)
 
     # Step 1: one remote pass into a single local file (no size limit applies locally).
     # DuckDB's FILE_SIZE_BYTES option was tried and rejected: it measures uncompressed
@@ -113,8 +114,7 @@ def main() -> None:
     whole = staging / "month.parquet"
     write_options = "(FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE 1048576)"
     con.execute(f"""
-        COPY (SELECT * FROM read_parquet('{source}')
-              WHERE "timestamp" >= {lo} AND "timestamp" < {hi})
+        COPY (SELECT * FROM read_parquet('{source}') WHERE {where})
         TO '{whole.as_posix()}' {write_options}""")
 
     # Step 2: if it is over the target, split it locally into equal row ranges.
@@ -136,15 +136,15 @@ def main() -> None:
         whole.unlink()
     seconds = time.time() - started
 
-    rows, ts_min, ts_max = con.execute(f"""
-        SELECT count(*), min("timestamp"), max("timestamp")
+    rows, block_min, block_max = con.execute(f"""
+        SELECT count(*), min(block_number), max(block_number)
         FROM read_parquet('{staging.as_posix()}/part-*.parquet')""").fetchone()
     sizes = [p.stat().st_size for p in parts]
     problems = []
     if rows != expected_rows:
-        problems.append(f"row count {rows:,} != expected {expected_rows:,}")
-    if not (lo <= ts_min and ts_max < hi):
-        problems.append(f"timestamps {ts_min}..{ts_max} fall outside the month")
+        problems.append(f"row count {rows:,} != remote count {expected_rows:,}")
+    if block_min < first_block or (end_block and block_max >= end_block):
+        problems.append(f"blocks {block_min}..{block_max} fall outside the month's range")
     if max(sizes) > LIMIT_BYTES:
         problems.append(f"largest part is {max(sizes):,} bytes, over the 3 GB limit")
     if problems:
@@ -152,10 +152,11 @@ def main() -> None:
 
     staging.rename(final_dir)
     entry = {
-        "table": table, "year": year, "month": month,
+        "table": table, "year": year, "month": month, "cut": "chain_utc_month",
+        "first_block": first_block, "end_block": end_block,
+        "block_min": block_min, "block_max": block_max,
         "rows": rows, "files": len(parts), "bytes": sum(sizes),
-        "source_bytes": source_bytes, "source_commit": source_commit(),
-        "ts_min": ts_min, "ts_max": ts_max,
+        "source_commit": source_commit(),
         "completed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     with manifest.open("a", encoding="utf-8") as f:
@@ -164,10 +165,8 @@ def main() -> None:
     print(f"Wrote {len(parts)} file(s) to {final_dir} in {seconds:,.0f} s")
     for p, size in zip(parts, sizes):
         print(f"  {p.name}: {size:,} bytes")
-    print(f"Rows: {rows:,} (match: True)")
-    print(f"Timestamps (UTC): {datetime.fromtimestamp(ts_min, timezone.utc)} to "
-          f"{datetime.fromtimestamp(ts_max, timezone.utc)}")
-    print(f"Output / source compressed size: {sum(sizes) / source_bytes:.3f}")
+    print(f"Rows: {rows:,} (matches remote count)")
+    print(f"Blocks in file: {block_min:,} to {block_max:,}")
 
 
 if __name__ == "__main__":
