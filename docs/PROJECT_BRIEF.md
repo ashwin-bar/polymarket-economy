@@ -79,11 +79,23 @@ Polymarket Data API ─┘            every layer                               
 
 | File (main) | Size | Rows | Use |
 |---|---|---|---|
-| `markets.parquet` | 0.29 GB | 4,049,900 | Market metadata, one row per market. **Start here.** |
-| `trades.parquet` | 37.5 GB | 1,266,885,846 | One row per matched fill. **Source of truth for volume.** |
-| `users.parquet` | 47.7 GB | 2,026,673,731 | Every fill keyed by the wallet whose order filled. **Source for people.** |
-| `orderfilled.parquet` | 110.3 GB | 2,026,704,633 | Raw events (fees as 32-byte binary). Avoid unless needed. |
-| `quant.parquet` | 36.7 GB | 1,266,885,845 | YES-normalised view. Not needed. |
+| `markets.parquet` | 0.55 GB | 4,049,900 | Market metadata, one row per market. **Start here.** |
+| `trades.parquet` | 45.85 GB | 1,266,885,846 | One row per matched fill. **Source of truth for volume.** |
+| `users.parquet` | 60.76 GB | 2,026,673,731 | Every fill keyed by the wallet whose order filled. **Source for people.** |
+| `orderfilled.parquet` | 127.20 GB | 2,026,704,633 | Raw events (fees as 32-byte binary). Avoid unless needed. |
+| `quant.parquet` | 44.66 GB | 1,266,885,845 | YES-normalised view. Not needed. |
+
+**Exact sizes and checksums** (1 GB = 10^9 bytes). Source: Hugging Face API, `GET https://huggingface.co/api/datasets/SII-WANGZJ/Polymarket_data/tree/main`, read 12 Oct 2026 at commit `73bc1adc43b05709d2cde3bf41ef4111eda3f4fc` (last modified 5 Oct 2026). These replace the earlier size figures, which were all too low.
+
+| File (main) | Bytes | SHA-256 |
+|---|---|---|
+| `markets.parquet` | 545,510,579 | `ce153f7ffa523911dc46d7a8cbcf324f4fd7a39e1bca0b6d396ee572595ad35f` |
+| `trades.parquet` | 45,846,785,710 | `c7ab409744dcafacbf1fe1d018f72fdcfede26e2c1626039fd7f0d5b8a632b09` |
+| `users.parquet` | 60,757,064,436 | `773c9fb7735bb7a8efa670c7fb90e5f25e5ce0f950ef0de49207e269bd7bf4d3` |
+| `orderfilled.parquet` | 127,200,963,857 | `ee81933332977deb43aaa5b5f1257697f50dadb1f8943b629d4bdb19d2068677` |
+| `quant.parquet` | 44,657,939,800 | `1700f0153d642e89d7868c5f6b288e0c513634faea45516826069b361026722a` |
+
+**Row counts:** only `markets` (4,049,900) is verified against a local, checksum-verified copy (test 0). The other four are the dataset card's figures and are unverified.
 
 **Key columns**
 - `trades`: `timestamp` (unix s), `block_number`, `transaction_hash`, `log_index`, `contract`, `market_id`, `condition_id`, `event_id`, `maker`, `taker`, `price`, `usd_amount`, `token_amount`, `maker_direction`, `taker_direction`, `nonusdc_side`, `asset_id`
@@ -198,6 +210,8 @@ Local footprint: a few GB at a time. The USB drive (D:, about 107 GB free) is am
 | 10 | **Public exposure** of pseudonymous wallet data. | Low, but matters in interviews | Aggregates only; small-cell suppression. |
 | 11 | **Estimated timestamps:** when the node omitted block time, the pipeline assumed 2 s per block (errors of ~12–38 s). | Low | Irrelevant at daily grain; documented. |
 | 12 | **Snapshot ends 4 Oct 2026:** about 11 weeks after the World Cup final (19 Jul). | Low | 4- and 8-week retention only for the World Cup cohort. |
+| 13 | **Recurring crypto series swamp the listing counts.** Test 0: "up or down" slugs are 19.71% of markets and 10.82% of `markets.volume`; hourly "bitcoin above" / "ethereum above" series add thousands more near-zero-volume markets. 93.2% of all markets were created in 2026 and 44.19% have zero volume. | Medium–high for the listing scorecard | Separate recurring crypto series from one-off events in the listing scorecard (slug rules, §4.2). Never report an unweighted per-market average across both. |
+| 14 | **`end_date` and `created_at` are not reliable.** Test 0: 32,720 markets have `end_date` before `created_at`; `end_date` ranges from 2011 to 2031; `created_at` runs to 5 Oct 2026, past the trades cut-off. | Medium | Close times (and first-activity times) come from `trades`, not from `markets`. |
 
 **Only concerns 4 and 9 can block the project.** All others are caveats to measure and document.
 
@@ -209,7 +223,7 @@ Pilot with the smallest data first. Read only the columns each test needs. Save 
 
 | Test | What | Decides |
 |---|---|---|
-| 0 | Load `markets.parquet` (0.29 GB): row counts, date ranges, null rates, `volume` distribution, event and slug patterns | Basic orientation |
+| 0 | Load `markets.parquet` (0.55 GB): row counts, date ranges, null rates, `volume` distribution, event and slug patterns | Basic orientation |
 | A | Read Parquet footers remotely (row groups; min/max `timestamp` and `block_number` per group) for `trades` and `users` | Whether monthly filtering skips data or needs full column scans |
 | B | Block-gap scan on `block_number`; daily fill counts and volume; uniqueness of (`transaction_hash`, `log_index`) | Completeness, duplicates, which periods to trust |
 | C | First-seen wallets per day, Mar–Aug 2026; dormancy cliff of established wallets after 4 May; first-trade size of new wallets | **Headline cohort** (World Cup vs 2024 election) |
@@ -236,6 +250,8 @@ Pilot with the smallest data first. Read only the columns each test needs. Save 
 | 6 | 2026-10-12 | Volume from `trades`; people from `users` | Different counting semantics |
 | 7 | 2026-10-12 | Value metric = volume per trader, not revenue | No deposits, P&L or decoded fees in trades data |
 | 8 | 2026-10-12 | Publish aggregates only; suppress cells under 10 wallets | Pseudonymous data on a public platform |
+| 12 | 2026-10-12 | Listing scorecard separates recurring crypto series from one-off events | Test 0: "up or down" slugs are 19.71% of markets, 10.82% of `markets.volume`; 44.19% of markets have zero volume |
+| 13 | 2026-10-12 | Market close times come from `trades`, not `markets.end_date` / `created_at` | Test 0: 32,720 markets with `end_date` before `created_at`; `end_date` spans 2011–2031 |
 | 9 | pending | Headline cohort: World Cup 2026 or US election 2024 | Test C |
 | 10 | pending | History window in scope | Tests A, F |
 | 11 | pending | Bot / market-maker rule | Test D |
