@@ -49,6 +49,39 @@ def source_commit() -> str:
         return json.load(resp)["sha"]
 
 
+def save_http_log(con, data_root: Path, table: str, year: int, month: int, count_requests: int) -> dict:
+    """Save DuckDB's HTTP request log for this month and return bytes received per phase."""
+    out = data_root / "eda" / f"http_{table}_{year:04d}-{month:02d}.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    con.execute(f"""
+        COPY (
+            WITH r AS (
+                SELECT "timestamp" AS logged_at, request.type AS method, response.status AS status,
+                       split_part(replace(request.headers['Range'], 'bytes=', ''), '-', 1)::BIGINT AS range_start,
+                       split_part(replace(request.headers['Range'], 'bytes=', ''), '-', 2)::BIGINT AS range_end,
+                       request.duration_ms AS duration_ms
+                FROM duckdb_logs_parsed('HTTP'))
+            SELECT CASE WHEN row_number() OVER (ORDER BY logged_at) <= {count_requests}
+                        THEN 'count' ELSE 'copy' END AS phase,
+                   method, status, range_start, range_end,
+                   -- every data request is a byte-range GET answered with 206 for exactly that range
+                   coalesce(range_end - range_start + 1, 0) AS bytes_received,
+                   duration_ms
+            FROM r
+        ) TO '{out.as_posix()}' (FORMAT csv, HEADER)""")
+    rows = con.execute(f"""
+        SELECT phase, count(*), coalesce(sum(bytes_received), 0),
+               count(*) FILTER (status NOT IN ('OK_200', 'PartialContent_206'))
+        FROM read_csv('{out.as_posix()}') GROUP BY 1""").fetchall()
+    stats = {phase: {"requests": n, "bytes": int(b), "non_ok": bad} for phase, n, b, bad in rows}
+    for phase in ("count", "copy"):
+        s = stats.get(phase, {"requests": 0, "bytes": 0, "non_ok": 0})
+        print(f"HTTP, {phase} pass: {s['requests']:,} requests, {s['bytes'] / 1e9:.3f} GB received, "
+              f"{s['non_ok']} non-OK responses")
+    print(f"HTTP log saved to {out}")
+    return stats
+
+
 def manifest_has(manifest: Path, table: str, year: int, month: int) -> bool:
     if not manifest.exists():
         return False
@@ -96,9 +129,12 @@ def main() -> None:
     print(f"{table} {year:04d}-{month:02d}: blocks {first_block:,} to "
           f"{f'{end_block - 1:,}' if end_block else 'end of file'}")
     print(f"Source: {source}")
+    con.execute("CALL enable_logging('HTTP')")  # DuckDB's own record of every HTTP request it makes
+
     # Independent row count: a separate remote pass over block_number only.
     expected_rows = con.execute(f"SELECT count(*) FROM read_parquet('{source}') WHERE {where}").fetchone()[0]
     print(f"Remote count: {expected_rows:,} rows")
+    count_requests = con.execute("SELECT count(*) FROM duckdb_logs_parsed('HTTP')").fetchone()[0]
     if expected_rows == 0:
         raise SystemExit("No rows in that block range.")
 
@@ -116,6 +152,7 @@ def main() -> None:
     con.execute(f"""
         COPY (SELECT * FROM read_parquet('{source}') WHERE {where})
         TO '{whole.as_posix()}' {write_options}""")
+    http = save_http_log(con, args.data_root, table, year, month, count_requests)
 
     # Step 2: if it is over the target, split it locally into equal row ranges.
     n_parts = max(1, -(-whole.stat().st_size // target_bytes))
@@ -156,6 +193,7 @@ def main() -> None:
         "first_block": first_block, "end_block": end_block,
         "block_min": block_min, "block_max": block_max,
         "rows": rows, "files": len(parts), "bytes": sum(sizes),
+        "http_bytes_received": sum(s["bytes"] for s in http.values()),
         "source_commit": source_commit(),
         "completed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
