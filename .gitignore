@@ -1,0 +1,25 @@
+# Virtual environment
+.venv/
+
+# Data never goes in the repo (it lives in D:\polymarket-economy-data)
+data/
+bronze/
+silver/
+gold/
+*.parquet
+*.duckdb
+*.duckdb.wal
+*.csv
+*.tsv
+*.hyper
+*.tde
+*.xlsx
+
+# Secrets
+.env
+.databrickscfg
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
