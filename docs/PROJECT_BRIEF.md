@@ -27,7 +27,7 @@ A portfolio project aimed at **analytics roles** (data/product/BI analyst) in pr
 
 > **"Tourists or residents? Polymarket's player economy after the World Cup."**
 
-You are the analyst reporting to Polymarket's Head of Growth after a record summer (combined Kalshi and Polymarket monthly volume roughly doubled from April to July 2026, helped by the World Cup).
+You are the analyst reporting to Polymarket's Head of Growth after a record summer (combined Kalshi and Polymarket monthly **share volume** roughly doubled from April to July 2026, helped by the World Cup). Share volume counts contracts matched at $1 each, not dollars paid: Polymarket's `markets.volume` follows shares matched (decision 18). How the combined two-platform figure was compiled has not been checked.
 
 - Did traders acquired through World Cup markets stay?
 - Did they cross into other categories (sports → politics, crypto, etc.)?
@@ -43,7 +43,8 @@ You are the analyst reporting to Polymarket's Head of Growth after a record summ
 | Moving sports → politics | Cross-sell sportsbook → casino |
 | Top-1% wallet concentration | VIP management |
 | New market listing | Product launch |
-| Volume per trader | Turnover / handle per customer |
+| Cash traded per trader | Turnover per customer |
+| Cash staked per trader | Handle per customer |
 
 ---
 
@@ -178,9 +179,11 @@ Local footprint: a few GB at a time. The USB drive (D:, about 107 GB free) is am
 | Acquisition cohort | Month (or event window) of first fill |
 | Entry category | Category of the market of the trader's first fill |
 | Retention (week n / month n) | Share of a cohort active in period n after acquisition |
-| Volume | Sum of `usd_amount` from `trades` (each fill once) |
-| Volume per trader | Volume ÷ active traders (state which side is attributed) |
-| Whale share | Share of volume from the top 1% of wallets in the period |
+| Notional volume (headline and reconciliation figure) | Shares matched: sum of `token_amount` from `trades`, each fill once, at $1 per share. This is what `markets.volume` and Polymarket's published volume count. Not dollars paid. |
+| Cash traded | A wallet's USD across all its fills, buys and sells: sum of `usd_amount` from `users` for that wallet. Basis for volume per trader and whale share. Summed over all wallets it counts both legs of every match, so it is not comparable with notional volume. |
+| Cash staked | A wallet's USD on BUY fills only: sum of `usd_amount` from `users` where `direction = 'BUY'`. The handle analogue. |
+| Volume per trader | Cash traded ÷ active traders |
+| Whale share | Share of cash traded from the top 1% of wallets in the period |
 | Market-maker / bot | Rule-based, set from the test D results (e.g. extreme fill counts, maker share, 24/7 activity); documented and versioned |
 
 **Day definition:** UTC calendar day (on-chain timestamps are UTC). State this on every dashboard.
@@ -239,6 +242,10 @@ Pilot with the smallest data first. Read only the columns each test needs. Save 
 
 **🔍 Robustness checkpoint after tests C, E and F:** decide headline cohort, ingestion path and history window. Record in the decision log before building silver and gold.
 
+**To-do**
+- Once January 2025 is in bronze, re-run `scripts/09_volume_definition.py` logic on the 763 of 2,302 December 2024 markets (about 35%) that matched no measure within 1%. They all sit below `markets.volume`, which later trading would explain; confirm that adding their January fills brings shares matched up to `markets.volume`.
+- Repeat the exchange-contract check from `scripts/08_reconcile_month.py` on a month after 28 Apr 2026, so the two V2 addresses are actually tested.
+
 ---
 
 ## 11. Decision log
@@ -250,7 +257,7 @@ Pilot with the smallest data first. Read only the columns each test needs. Save 
 | 3 | 2026-10-12 | Warehouse = Databricks Free Edition; no Azure | Free Edition lacks custom storage locations; second platform adds no signal |
 | 4 | 2026-10-12 | Tableau: Free Edition for live dev/demo; Public Edition for publishing | Public Edition can't connect to Databricks; Free Edition can't publish |
 | 5 | 2026-10-12 | Ingest one month at a time, column subsets, files under 3 GB | 5 GB upload cap; undisclosed compute quota |
-| 6 | 2026-10-12 | Volume from `trades`; people from `users` | Different counting semantics |
+| 6 | 2026-10-12 | Volume from `trades`; people from `users` (volume part refined by decision 18) | Different counting semantics |
 | 7 | 2026-10-12 | Value metric = volume per trader, not revenue | No deposits, P&L or decoded fees in trades data |
 | 8 | 2026-10-12 | Publish aggregates only; suppress cells under 10 wallets | Pseudonymous data on a public platform |
 | 12 | 2026-10-12 | Listing scorecard separates recurring crypto series from one-off events | Test 0: "up or down" slugs are 19.71% of markets, 10.82% of `markets.volume`; 44.19% of markets have zero volume |
@@ -259,6 +266,7 @@ Pilot with the smallest data first. Read only the columns each test needs. Save 
 | 15 | 2026-10-12 | A month over the 3 GB file limit is split into multiple part files in its month folder; needed columns are not dropped to fit | Test A column sizes: dropping re-derivable columns saves 1.1 GB of 45.84 (`trades`) and 4.7 GB of 60.75 (`users`), and does not change the file count for any month |
 | 16 | 2026-10-12 | Bronze keeps all source columns (17 in `trades`, 14 in `users`); files are named `part-NN.parquet` for every month | Test A column sizes: all columns = 45.84 GB and 60.75 GB; dropping re-derivable columns leaves the per-month file counts unchanged (58 and 63) |
 | 17 | 2026-10-12 | Time comes from the chain, not the dataset: build a block → UTC lookup (real Polygon block times, anchors every 1,000 blocks, linear interpolation); cut bronze months by the block range of each true UTC month; keep the dataset `timestamp` in bronze untouched | Test B, `trades` Dec 2024: dataset clock up to 16.3 h behind real block time, verified on nine blocks against a public Polygon RPC node (concern 11). Lookup validated on 500 random blocks: median error 1.2 s, max 248 s. Re-cut Dec 2024 `trades` has 11,399,126 rows against 11,568,669 in the dataset's own December; the difference is fills really made on 1 Jan 2025 (and 49 blocks from 30 Nov) |
+| 18 | 2026-10-12 | Three volume measures (§7). **Notional volume** = shares matched from `trades.token_amount`: headline and reconciliation figure. **Cash traded** = a wallet's USD on buys and sells from `users`: basis for volume per trader and whale share. **Cash staked** = a wallet's USD on BUY fills from `users`: handle analogue. `trades.usd_amount` alone is not used as "volume" | Dec 2024, `scripts/09_volume_definition.py`: of 2,302 markets created in the month, 1,493 (64.9%) match shares matched to within 0.1% of `markets.volume`, 1 is above it, and none matches maker-leg or taker-leg USD. `scripts/08_reconcile_month.py`: maker leg $770.9M vs taker leg $1,155.0M |
 | 9 | pending | Headline cohort: World Cup 2026 or US election 2024 | Test C |
 | 10 | pending | History window in scope | Tests A, F |
 | 11 | pending | Bot / market-maker rule | Test D |

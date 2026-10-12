@@ -26,4 +26,4 @@ Analytics portfolio project: big-data ETL into Databricks, then Tableau dashboar
 - DuckDB for laptop-side reads of the source files; PySpark / Databricks SQL in the warehouse.
 - Bronze layout: `bronze\<table>\year=YYYY\month=MM\part-NN.parquet` (`part-00`, `part-01`, …), each file under 3 GB. A month over the limit gets more part files; all source columns are kept.
 - Timestamps are UTC; a "day" is a UTC calendar day.
-- Volume comes from `trades`; people and activity come from `users`.
+- Notional volume (shares matched, the headline figure) comes from `trades.token_amount`; people, activity, cash traded and cash staked come from `users` (brief §7).
