@@ -11,7 +11,8 @@
 #   segment_at_entry                         segment rule v1 (decision 11) on that profile
 #   is_scripted_cohort                       recomputed with the rule of decision 36
 #
-# wallet_id and every other stage 1 column are carried over unchanged. The table is replaced
+# wallet_id and every other stage 1 column are carried over unchanged, except that first_fill_ts
+# is clamped to first_month, as the fact tables' ts_utc is. The table is replaced
 # from itself, reading only the stage 1 columns, so the notebook can be re-run.
 #
 # Parameter: pilot_first_month = "2024-12" works only on wallets first seen that month and
@@ -45,7 +46,12 @@ fills_filter = f"AND f.month_start IN (DATE '{pilot}-01', add_months(DATE '{pilo
 # The scripted-cohort count is over all wallets, pilot or not, so the flag is the same either way.
 SELECT_SQL = f"""
     WITH s AS (
-        SELECT {", ".join(STAGE1)},
+        SELECT {", ".join(c for c in STAGE1 if c != "first_fill_ts")},
+               -- Stage 1 interpolated first_fill_ts without the month clamp the fact tables use, so a
+               -- first fill within seconds of a month boundary could fall outside first_month. Clamp it
+               -- here so it agrees with first_date and with wallet_fills.ts_utc (no-op on a re-run).
+               greatest(least(first_fill_ts, CAST(add_months(first_month, 1) AS TIMESTAMP) - INTERVAL 1 SECOND),
+                        CAST(first_month AS TIMESTAMP)) AS first_fill_ts,
                count(*) OVER (PARTITION BY first_date, CAST(round(first_day_cash * 100) AS BIGINT)) AS same_day_same_amount
         FROM {SILVER}.dim_wallet),
     w AS (SELECT * FROM s {wallet_filter}),
@@ -111,6 +117,7 @@ s = spark.sql(f"""
            count_if(entry_hours_active > entry_hours_available OR entry_hours_available < 1
                     OR entry_hours_available > 721) AS bad_entry_hours,
            count_if(NOT entry_window_complete) AS entry_window_incomplete,
+           count_if(CAST(first_fill_ts AS DATE) != first_date) AS first_fill_ts_not_on_first_date,
            count_if(is_scripted_cohort) AS scripted_cohort,
            count_if(entry_category = 'Uncategorised') AS entry_uncategorised,
            sum(entry_fills) AS entry_fills
@@ -135,7 +142,8 @@ problems = []
 if s["distinct_ids"] != s["wallets"] or s["distinct_addresses"] != s["wallets"]:
     problems.append(f"wallets {s['wallets']}, ids {s['distinct_ids']}, addresses {s['distinct_addresses']}")
 for check in ("null_entry_fills", "null_entry_category", "null_segment_at_entry", "entry_fills_below_first_day",
-              "entry_fills_above_lifetime", "short_lived_entry_not_lifetime", "bad_entry_hours"):
+              "entry_fills_above_lifetime", "short_lived_entry_not_lifetime", "bad_entry_hours",
+              "first_fill_ts_not_on_first_date"):
     if s[check]:
         problems.append(f"{check} = {s[check]}")
 if not pilot:
