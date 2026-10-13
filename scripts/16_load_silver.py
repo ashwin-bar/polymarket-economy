@@ -9,6 +9,11 @@
     python scripts/16_load_silver.py gamma --pilot 10000        Gamma event tags for the 10,000 largest target events
     python scripts/16_load_silver.py gamma                      Gamma event tags for every one-off event and a sample per series
     python scripts/16_load_silver.py dim-market [--version v1]  dim_event and dim_market with categories, and test H
+    python scripts/16_load_silver.py wallet-month --pilot 2024-12   wallet_month for that month only
+    python scripts/16_load_silver.py wallet-month               wallet_month for the whole history
+    python scripts/16_load_silver.py calibration                segment threshold grid over five months (decision 11)
+    python scripts/16_load_silver.py wallet2 [--pilot 2024-12]  dim_wallet stage 2 (entry category, profile, segment, cohort)
+    python scripts/16_load_silver.py dq                         data quality and reconciliation pass over all of silver
 
 The fact load is sequential, oldest month first, and stops at the first failed run or failed
 data quality check. Months already in polymarket_silver.load_log are skipped by the notebook.
@@ -216,8 +221,54 @@ def dim_market() -> None:
          "silver_dim_market")
 
 
+def wallet_month() -> None:
+    pilot = option(sys.argv, "--pilot")
+    if pilot:
+        save(run_notebook("silver_wallet_month", {"months": pilot}, f"wallet_month pilot {pilot}", expected_s=200),
+             "silver_wallet_month_pilot")
+    else:
+        save(run_notebook("silver_wallet_month", {"months": ""}, "wallet_month", expected_s=900), "silver_wallet_month")
+
+
+def wallet2() -> None:
+    pilot = option(sys.argv, "--pilot")
+    if pilot:
+        save(run_notebook("silver_dim_wallet_stage2", {"pilot_first_month": pilot}, f"dim_wallet stage 2 pilot {pilot}",
+                          expected_s=200), "silver_dim_wallet_stage2_pilot")
+    else:
+        save(run_notebook("silver_dim_wallet_stage2", {"pilot_first_month": ""}, "dim_wallet stage 2", expected_s=600),
+             "silver_dim_wallet_stage2")
+
+
+def dq() -> None:
+    result = run_notebook("silver_dq", {}, "silver dq", expected_s=400)
+    # Cross-layer check on the laptop: new wallets per UTC day against test C's saved daily table.
+    with (EDA / "C_wallet_identity_daily.csv").open(newline="", encoding="utf-8") as f:
+        test_c_daily = {r["date"]: int(r["new_wallets"]) for r in csv.DictReader(f)}
+    # Test C has one row per day from 1 Jan 2026 and one row for everything before.
+    silver_daily = {"before 2026-01-01": 0}
+    for day, n in result.pop("new_wallets_by_day").items():
+        if day < "2026-01-01":
+            silver_daily["before 2026-01-01"] += n
+        else:
+            silver_daily[day] = n
+    differing = {d: (n, test_c_daily[d]) for d, n in silver_daily.items() if d in test_c_daily and test_c_daily[d] != n}
+    result["new_wallets_vs_test_c"] = {
+        "days_in_silver": len(silver_daily), "days_in_test_c": len(test_c_daily),
+        "days_compared": sum(1 for d in silver_daily if d in test_c_daily), "days_differing": len(differing),
+        "largest_differences_silver_vs_test_c": dict(sorted(differing.items(), key=lambda kv: -abs(kv[1][0] - kv[1][1]))[:10]),
+        "total_silver": sum(silver_daily.values()), "total_test_c": sum(test_c_daily.values())}
+    save(result, "silver_dq")
+
+
+def calibration() -> None:
+    save(run_notebook("silver_segment_calibration", {}, "segment calibration", expected_s=300),
+         "silver_segment_calibration")
+
+
 STEPS = {"setup": setup, "wallet": wallet, "facts": facts, "market-stats": market_stats, "gamma": gamma,
-         "dim-market": dim_market}
+         "dim-market": dim_market, "wallet-month": wallet_month, "calibration": calibration,
+         "wallet2": wallet2, "dq": dq}
 
 
 def main() -> None:

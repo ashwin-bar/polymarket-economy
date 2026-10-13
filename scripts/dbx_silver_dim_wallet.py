@@ -13,8 +13,12 @@
 # to dim_date on an expression stalled in a single task on 13 Oct 2026 and is not used.)
 #
 # Built in two statements so each cost is visible:
-#   1. polymarket_silver.wallet_base: one row per wallet (the only pass over users)
+#   1. polymarket_silver.wallet_base: one row per wallet (the only pass over users); staging,
+#      dropped at the end of a successful full run
 #   2. polymarket_silver.dim_wallet: wallet_id by row_number over those rows, plus flags
+#
+# A full run replaces dim_wallet with the stage 1 columns only; run dbx_silver_dim_wallet_stage2.py
+# afterwards to add the entry columns back.
 #
 # Parameter: pilot_years = e.g. "2022,2023" runs both statements on those bronze years only and
 # writes nothing (timing and plan check). Empty = full history, tables written.
@@ -71,8 +75,9 @@ def dim_sql(base: str) -> str:
     return f"""
     WITH flagged AS (
         SELECT *,
-               -- Scripted cohort (brief §7, decision 26): 20+ wallets first seen the same day with an
-               -- identical first-day cash amount of $100 or more that is not a whole multiple of $50.
+               -- Scripted cohort (brief §7, decisions 26 and 36): 20+ wallets first seen the same day with
+               -- an identical first-day cash amount of $100 or more. A whole multiple of $50 is exempt
+               -- only while fewer than 200 wallets share that day and amount.
                count(*) OVER (PARTITION BY first_date, CAST(round(first_day_cash * 100) AS BIGINT)) AS same_day_same_amount
         FROM {base})
     SELECT CAST(row_number() OVER (ORDER BY f.first_fill.block_number, f.first_fill.log_index, f.address)
@@ -85,7 +90,8 @@ def dim_sql(base: str) -> str:
            f.first_fill.market_id AS first_market_id,
            f.last_date, f.lifetime_fills, f.lifetime_cash_traded, f.first_day_cash, f.first_day_fills,
            (f.same_day_same_amount >= 20 AND f.first_day_cash >= 100
-            AND CAST(round(f.first_day_cash * 100) AS BIGINT) % 5000 != 0) AS is_scripted_cohort,
+            AND (CAST(round(f.first_day_cash * 100) AS BIGINT) % 5000 != 0 OR f.same_day_same_amount >= 200))
+               AS is_scripted_cohort,
            f.first_date < DATE '2023-03-01' AS is_left_censored,
            f.last_date = DATE '2026-04-27' AS last_seen_v2_eve
     FROM flagged f LEFT JOIN {SILVER}.block_anchor a
@@ -154,4 +160,6 @@ result = {"pilot_years": pilot_years, "timings": timings, "summary": s,
 print(json.dumps(result, indent=2, default=str))
 if problems:
     raise RuntimeError("FAILED: " + json.dumps(problems, default=str))
+if not pilot_years:
+    spark.sql(f"DROP TABLE IF EXISTS {SILVER}.wallet_base")  # noqa: F821
 dbutils.notebook.exit(json.dumps(result, default=str))  # noqa: F821
