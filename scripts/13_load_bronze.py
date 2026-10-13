@@ -38,11 +38,15 @@ FINISHED = {"TERMINATED", "INTERNAL_ERROR", "SKIPPED"}
 CLI = shutil.which("databricks")
 
 
-def cli(*args: str, check: bool = True) -> str:
-    out = subprocess.run([CLI, *args], capture_output=True, text=True, encoding="utf-8")
-    if check and out.returncode != 0:
-        raise RuntimeError(f"databricks {' '.join(args[:3])} failed: {out.stderr.strip()[:500]}")
-    return out.stdout
+def cli(*args: str, check: bool = True, tries: int = 1) -> str:
+    """Run the Databricks CLI. Read-only calls pass tries > 1: the API drops connections often."""
+    for attempt in range(1, tries + 1):
+        out = subprocess.run([CLI, *args], capture_output=True, text=True, encoding="utf-8")
+        if out.returncode == 0 or not check:
+            return out.stdout
+        if attempt < tries:
+            time.sleep(5 * attempt)
+    raise RuntimeError(f"databricks {' '.join(args[:3])} failed: {out.stderr.strip()[:500]}")
 
 
 def months_between(first: str, last: str) -> list[str]:
@@ -60,7 +64,10 @@ def next_month(label: str) -> str:
 
 
 def manifest_months() -> set[tuple[str, str]]:
-    text = cli("fs", "cat", MANIFEST, check=False)
+    listing = cli("fs", "ls", MANIFEST.rsplit("/", 1)[0], tries=6)
+    if "_manifest.jsonl" not in listing:
+        return set()
+    text = cli("fs", "cat", MANIFEST, tries=6)
     done = set()
     for line in text.splitlines():
         if line.startswith("{"):
@@ -73,6 +80,9 @@ def run_month(table: str, label: str, first_block: int, end_block: int | None) -
     year, month = label.split("-")
     payload = {
         "run_name": f"polymarket bronze: {table} {label}",
+        # Makes the submit safe to retry after a dropped connection: the same token returns
+        # the run that already exists instead of starting a second one.
+        "idempotency_token": f"pm-bronze-{table}-{label}-{int(time.time())}",
         "tasks": [{
             "task_key": "bronze_month",
             "notebook_task": {
@@ -91,7 +101,8 @@ def run_month(table: str, label: str, first_block: int, end_block: int | None) -
     }
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
         json.dump(payload, f)
-    run_id = json.loads(cli("jobs", "submit", "--json", f"@{f.name}", "--no-wait", "-o", "json"))["run_id"]
+    run_id = json.loads(cli("jobs", "submit", "--json", f"@{f.name}", "--no-wait", "-o", "json",
+                            tries=6))["run_id"]
     Path(f.name).unlink()
 
     while True:
@@ -111,7 +122,7 @@ def run_month(table: str, label: str, first_block: int, end_block: int | None) -
         "execution_ms": task.get("execution_duration"),
         "logged_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
-    output = json.loads(cli("jobs", "get-run-output", str(task["run_id"]), "-o", "json"))
+    output = json.loads(cli("jobs", "get-run-output", str(task["run_id"]), "-o", "json", tries=6))
     if output.get("notebook_output", {}).get("result"):
         record["result"] = json.loads(output["notebook_output"]["result"])
     if output.get("error"):
