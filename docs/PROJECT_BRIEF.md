@@ -127,7 +127,8 @@ Polymarket Data API ─┘            every layer                               
 ### Databricks Free Edition
 - Serverless only. One SQL warehouse, 2X-Small. Max 5 concurrent job tasks. One active pipeline per type.
 - **Compute quota is undisclosed.** Exceeding it shuts compute for the rest of the day (data is kept).
-- **Outbound internet is limited to an unpublished list of trusted domains.** PyPI works; whether `huggingface.co` works is unknown (test E).
+- **Outbound internet is limited to an unpublished list of trusted domains.** PyPI works. **Hugging Face is reachable** (test E step 1, 12 Oct 2026, `scripts/dbx_test_e1_hf_reach.py` run as a one-time serverless notebook job, 24 s): all four routes read the `markets.parquet` footer on `main` and returned 4,049,900 rows: a plain HTTPS call to the `huggingface.co` API; HTTPS range requests on the file URL, redirected to the CDN `us.aws.cdn.hf.co`; `hf://` through `huggingface_hub`; and `hf://` through DuckDB 1.5.6 (both packages pip-installed in the session, and DuckDB's extension download also worked). **Test E steps 2 and 3 (12–13 Oct 2026):** a 97 KB laptop upload of Dec 2022 `trades` to the Volume read back in Spark with 1,666 rows (`scripts/dbx_test_e2_readback.py`). Then Dec 2024 `trades` was extracted **directly from Hugging Face inside a serverless notebook** by block range (`scripts/dbx_test_e3_direct_extract.py`, DuckDB 1.5.6): 0.542 GB received in 38 requests, extract 19.9 s, copy into the Volume 8.2 s, Spark read-back 10.9 s, 68 s of job execution in total, and 11,399,126 rows by the remote count, by Spark and in the laptop's manifest. The same month took 255 s to extract on the laptop. Spark reads the source's unsigned 64-bit `timestamp` and `block_number` as `decimal(20,0)`; cast to `bigint` in silver. On serverless, `dbutils.fs.cp` cannot read the session's local disk; a plain file copy to the `/Volumes` path works. `system.billing.usage` is readable but lags, so the DBU cost of a run is only visible later; the quota limit itself is still undisclosed. Nothing larger than 0.54 GB has been tried.
+- **This project's workspace** (not secrets; no token is stored in the repo): host `dbc-0f3802cc-f8e5.cloud.databricks.com`; SQL warehouse "Serverless Starter Warehouse", id `748ff4e9a4a1ce9b`, Server Hostname `dbc-0f3802cc-f8e5.cloud.databricks.com`, port 443, HTTP Path `/sql/1.0/warehouses/748ff4e9a4a1ce9b` (2X-Small, auto-stop 10 min). Catalog `workspace`, schema `workspace.polymarket`, managed Volume `workspace.polymarket.bronze` (path `/Volumes/workspace/polymarket/bronze`). Laptop access is through the Databricks CLI's `DEFAULT` profile (browser login).
 - Not supported: R, Scala, custom workspace storage locations (so no external ADLS), legacy features. Non-commercial use only.
 - Inactive accounts may be deleted. Log in regularly and keep code in Git.
 
@@ -155,15 +156,17 @@ The source is files, not a database, so "pull only what we need" works through P
 - **Row-group skipping works at month level (test A, 12 Oct 2026).** In both `trades` (1,261 row groups) and `users` (2,005), every row group lies inside one UTC calendar month, so a one-month filter reads only that month's row groups. Within a month the groups are not time-sorted (about 93% overlap an earlier group), so day-level filters skip little. The footers are 2.8 MB and 3.4 MB.
 - **2026 dominates.** 86% of `trades` rows fall in Jan–Oct 2026; March 2026 alone is 16.2% (205.0M rows, 6.90 GB compressed in the source with all columns). Months over the file limit are split into several part files inside the month folder, not trimmed by dropping columns.
 
-**Ingestion loop (one month at a time):**
+**Ingestion path (decision 20): direct extraction inside Databricks.** A serverless notebook job installs DuckDB, reads `hf://datasets/SII-WANGZJ/Polymarket_data@main/<file>` filtered to the block range of one true UTC month, writes `part-NN.parquet` files to the session's local disk, copies them into `/Volumes/workspace/polymarket/bronze/<table>/year=YYYY/month=MM/`, and checks the row count with Spark against a separate remote count. The laptop submits the job through the Databricks CLI and supplies the month's block range from `lookup\month_bounds.csv`. No data passes through the laptop.
+
+**Fallback: the laptop route below.** It is tested end to end (extract with `scripts/04_bronze_month.py`, upload with `databricks fs cp`, read back in Spark) and is kept for the case where Hugging Face stops being reachable from Databricks or the compute quota runs out.
+
+**Laptop ingestion loop (fallback; one month at a time):**
 1. On the laptop, DuckDB reads `hf://datasets/SII-WANGZJ/Polymarket_data@main/<file>` remotely, filtering to the block range of one true UTC month (decision 17; the dataset's own `timestamp` is not used to cut months). Bronze keeps all source columns (decision 16).
 2. Write `D:\polymarket-economy-data\bronze\<table>\year=YYYY\month=MM\part-NN.parquet` (`part-00`, `part-01`, …; planning target 2.5 GB per file, limit 3 GB). From the source's compressed sizes this is 58 files for `trades` and 63 for `users` over 48 months; only 2026 months need more than one.
 3. Upload to a Unity Catalog Volume.
 4. Log the month as done in a manifest, so runs resume after interruption. Optionally delete the local copy.
 
-If Databricks can read `huggingface.co` directly (test E), skip the laptop hop entirely.
-
-Local footprint: a few GB at a time. The USB drive (D:, about 107 GB free) is ample.
+Local footprint on the fallback route: a few GB at a time; the full history (106.6 GB) does not fit on D: (about 96 GB free) at once, so months would be uploaded and removed as they go.
 
 ---
 
@@ -244,6 +247,7 @@ Pilot with the smallest data first. Read only the columns each test needs. Save 
 
 **To-do**
 - Once January 2025 is in bronze, re-run `scripts/09_volume_definition.py` logic on the 763 of 2,302 December 2024 markets (about 35%) that matched no measure within 1%. They all sit below `markets.volume`, which later trading would explain; confirm that adding their January fills brings shares matched up to `markets.volume`.
+- Run test C in Databricks, not on the laptop: it needs each wallet's first-ever fill across the whole `users` history, which is far more data than the pilot months on D:.
 - Set the wallet-segment thresholds (decision 11) from the joint distribution of fills, maker share and share of hours active across several months, including a World Cup month.
 
 ---
@@ -268,6 +272,7 @@ Pilot with the smallest data first. Read only the columns each test needs. Save 
 | 17 | 2026-10-12 | Time comes from the chain, not the dataset: build a block → UTC lookup (real Polygon block times, anchors every 1,000 blocks, linear interpolation); cut bronze months by the block range of each true UTC month; keep the dataset `timestamp` in bronze untouched | Test B, `trades` Dec 2024: dataset clock up to 16.3 h behind real block time, verified on nine blocks against a public Polygon RPC node (concern 11). Lookup validated on 500 random blocks: median error 1.2 s, max 248 s. Re-cut Dec 2024 `trades` has 11,399,126 rows against 11,568,669 in the dataset's own December; the difference is fills really made on 1 Jan 2025 (and 49 blocks from 30 Nov) |
 | 18 | 2026-10-12 | Three volume measures (§7). **Notional volume** = shares matched from `trades.token_amount`: headline and reconciliation figure. **Cash traded** = a wallet's USD on buys and sells from `users`: basis for volume per trader and whale share. **Cash staked** = a wallet's USD on BUY fills from `users`: handle analogue. `trades.usd_amount` alone is not used as "volume" | Dec 2024, `scripts/09_volume_definition.py`: of 2,302 markets created in the month, 1,493 (64.9%) match shares matched to within 0.1% of `markets.volume`, 1 is above it, and none matches maker-leg or taker-leg USD. `scripts/08_reconcile_month.py`: maker leg $770.9M vs taker leg $1,155.0M |
 | 19 | 2026-10-12 | Bots are handled by a three-way wallet segmentation (market maker / high-frequency taker / retail) that dashboards can filter on, not by excluding wallets. Thresholds are left open (decision 11) | Tests D and 24/7 on Dec 2024 and 1–4 Oct 2026 (concern 3): the most active wallets split into mostly-maker and mostly-taker groups, and the automated share grew from 61 to 1,382 wallets active in 90%+ of hours |
+| 20 | 2026-10-13 | Ingestion path = direct extraction from Hugging Face inside Databricks serverless (DuckDB in a notebook job, by true-UTC block range, into the Volume). The laptop route (extract on D:, upload with the CLI) is the documented fallback | Test E: all four routes to Hugging Face work from serverless; Dec 2024 `trades` extracted in 68 s of job time against 255 s on the laptop before upload. Content check of the Databricks file against the laptop file: identical row count (11,399,126), distinct keys, distinct transactions, block range, and exact integer checksums of `block_number`, `log_index`, and `usd_amount` / `token_amount` in millionths; the floating-point sums agree to 12 significant figures. Not yet tried above 0.54 GB; quota undisclosed |
 | 9 | pending | Headline cohort: World Cup 2026 or US election 2024 | Test C |
 | 10 | pending | History window in scope | Tests A, F |
 | 11 | pending | Bot / market-maker rule | Test D |
