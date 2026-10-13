@@ -119,6 +119,45 @@ tests AS (
     UNION ALL SELECT 'cohort_retention', 'rows with fewer than 10 cohort wallets, or a count of 1-9 shown', '0',
            CAST(count_if(cohort_wallets < 10 OR active_wallets BETWEEN 1 AND 9 OR observable_wallets BETWEEN 1 AND 9) AS STRING),
            count_if(cohort_wallets < 10 OR active_wallets BETWEEN 1 AND 9 OR observable_wallets BETWEEN 1 AND 9) = 0 FROM r
+    -- entry_channel: the two channels partition the World Cup and election cohorts, in every week
+    UNION ALL SELECT 'cohort_retention', 'World Cup cohort entering via a World Cup market (entry_channel)', '129299',
+           CAST(max(cohort_wallets) AS STRING), max(cohort_wallets) = 129299
+           FROM r WHERE cohort_type = 'event' AND cohort = 'world_cup_2026' AND entry_category = 'ALL' AND segment_at_entry = 'ALL' AND scripted = 'ALL'
+             AND entry_channel = 'via_event_market' AND week_n = 0
+    UNION ALL SELECT 'cohort_retention', 'election cohort entering via a 2024 election market (entry_channel)', '160958',
+           CAST(max(cohort_wallets) AS STRING), max(cohort_wallets) = 160958
+           FROM r WHERE cohort_type = 'event' AND cohort = 'us_election_2024' AND entry_category = 'ALL' AND segment_at_entry = 'ALL' AND scripted = 'ALL'
+             AND entry_channel = 'via_event_market' AND week_n = 0
+    UNION ALL SELECT 'cohort_retention', 'cohort-weeks where via_event_market + other != ALL (cohort, observable or active wallets)', '0',
+           CAST(count_if(parts != 2 OR cw != cw_all OR ow != ow_all OR aw != aw_all) AS STRING),
+           count_if(parts != 2 OR cw != cw_all OR ow != ow_all OR aw != aw_all) = 0
+           FROM (SELECT cohort, week_n, count_if(entry_channel != 'ALL') AS parts,
+                        sum(CASE WHEN entry_channel != 'ALL' THEN cohort_wallets END) AS cw, max(CASE WHEN entry_channel = 'ALL' THEN cohort_wallets END) AS cw_all,
+                        sum(CASE WHEN entry_channel != 'ALL' THEN observable_wallets END) AS ow, max(CASE WHEN entry_channel = 'ALL' THEN observable_wallets END) AS ow_all,
+                        sum(CASE WHEN entry_channel != 'ALL' THEN active_wallets END) AS aw, max(CASE WHEN entry_channel = 'ALL' THEN active_wallets END) AS aw_all
+                 FROM r WHERE cohort_type = 'event' AND cohort IN ('world_cup_2026', 'us_election_2024')
+                   AND entry_category = 'ALL' AND segment_at_entry = 'ALL' AND scripted = 'ALL' GROUP BY cohort, week_n)
+    UNION ALL SELECT 'cohort_retention', 'rows with an entry_channel outside the World Cup and election cohorts', '0',
+           CAST(count_if(entry_channel != 'ALL' AND cohort NOT IN ('world_cup_2026', 'us_election_2024')) AS STRING),
+           count_if(entry_channel != 'ALL' AND cohort NOT IN ('world_cup_2026', 'us_election_2024')) = 0 FROM r
+    -- cohort_calendar_baseline
+    UNION ALL SELECT 'cohort_calendar_baseline', 'rows (3 cohorts x 2 segments x weeks 0-8)', '54', CAST(count(*) AS STRING), count(*) = 54
+           FROM workspace.polymarket_gold.cohort_calendar_baseline
+    UNION ALL SELECT 'cohort_calendar_baseline', 'rows where week 0 baseline or cohort retention is not 100%', '0',
+           CAST(count_if(week_n = 0 AND (abs(baseline_retention - 1) > 1e-12 OR abs(cohort_retention - 1) > 1e-12)) AS STRING),
+           count_if(week_n = 0 AND (abs(baseline_retention - 1) > 1e-12 OR abs(cohort_retention - 1) > 1e-12)) = 0
+           FROM workspace.polymarket_gold.cohort_calendar_baseline
+    UNION ALL SELECT 'cohort_calendar_baseline', 'rows with a rate outside 0-1, a missing ratio, or a week-0 group under 10 wallets', '0',
+           CAST(count_if(NOT (baseline_retention BETWEEN 0 AND 1) OR NOT (baseline_week0_share BETWEEN 0 AND 1)
+                         OR relative_retention IS NULL OR smallest_week0_group < 10) AS STRING),
+           count_if(NOT (baseline_retention BETWEEN 0 AND 1) OR NOT (baseline_week0_share BETWEEN 0 AND 1)
+                    OR relative_retention IS NULL OR smallest_week0_group < 10) = 0
+           FROM workspace.polymarket_gold.cohort_calendar_baseline
+    UNION ALL SELECT 'cohort_calendar_baseline', 'entry days covered (39, 39 and 90)', '39, 39, 90',
+           array_join(array_sort(collect_list(entry_days)), ', '),
+           array_join(array_sort(collect_list(entry_days)), ', ') = '39, 39, 90'
+           FROM (SELECT cohort, max(entry_days) AS entry_days FROM workspace.polymarket_gold.cohort_calendar_baseline
+                 WHERE segment = 'ALL' GROUP BY cohort)
     -- cohort_retention_monthly
     UNION ALL SELECT 'cohort_retention_monthly', 'all monthly cohorts together = all wallets', '3192135', CAST(max(cohort_wallets) AS STRING), max(cohort_wallets) = 3192135
            FROM rm WHERE cohort_type = 'month' AND cohort = 'ALL' AND entry_category = 'ALL' AND segment_at_entry = 'ALL' AND scripted = 'ALL' AND month_n = 0
@@ -130,7 +169,11 @@ tests AS (
     -- the election cohort's last first fill is 5 Nov 2024; + 23 x 30 days = 26 Sep 2026, inside the data
     UNION ALL SELECT 'cohort_retention_monthly', 'election cohort fully observable in periods 0-22', '218361', CAST(min(observable_wallets) AS STRING), min(observable_wallets) = 218361
            FROM rm WHERE cohort_type = 'event' AND cohort = 'us_election_2024' AND entry_category = 'ALL' AND segment_at_entry = 'ALL' AND scripted = 'ALL'
-             AND month_n <= 22
+             AND entry_channel = 'ALL' AND month_n <= 22
+    UNION ALL SELECT 'cohort_retention_monthly', 'World Cup cohort: via_event_market + other = all (period 0)', '226923',
+           CAST(sum(cohort_wallets) AS STRING), sum(cohort_wallets) = 226923 AND count(*) = 2
+           FROM rm WHERE cohort_type = 'event' AND cohort = 'world_cup_2026' AND entry_category = 'ALL' AND segment_at_entry = 'ALL' AND scripted = 'ALL'
+             AND entry_channel != 'ALL' AND month_n = 0
     UNION ALL SELECT 'cohort_retention_monthly', 'rows with fewer than 10 cohort wallets, or a count of 1-9 shown', '0',
            CAST(count_if(cohort_wallets < 10 OR active_wallets BETWEEN 1 AND 9 OR observable_wallets BETWEEN 1 AND 9) AS STRING),
            count_if(cohort_wallets < 10 OR active_wallets BETWEEN 1 AND 9 OR observable_wallets BETWEEN 1 AND 9) = 0 FROM rm

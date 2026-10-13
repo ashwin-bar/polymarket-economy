@@ -1,9 +1,14 @@
 -- gold.cohort_retention_monthly (docs/GOLD_PLAN.md §3): the long view of retention, by 30-day
 -- periods since each wallet's own first fill (periods 0-23), for the three event cohorts and for
 -- monthly acquisition cohorts. Same shape and rules as gold.cohort_retention.
--- A cube: cohort, entry_category, segment_at_entry and scripted each have an 'ALL' value,
--- aggregated before suppression, so headline curves are exact. Pick one value or 'ALL' per
--- dimension; never sum rows of a dimension.
+-- A cube: cohort, entry_category, segment_at_entry, scripted and entry_channel each have an 'ALL'
+-- value, aggregated before suppression, so headline curves are exact. Pick one value or 'ALL'
+-- per dimension; never sum rows of a dimension.
+--
+--   entry_channel       for the World Cup and 2024 election cohorts only: 'via_event_market' if
+--                       the wallet's first fill was in a World Cup (or 2024 election) market,
+--                       'other' if it entered in the same window through any other market.
+--                       Every other cohort has entry_channel 'ALL' only.
 --
 --   cohort_wallets      wallets in the cell
 --   observable_wallets  wallets whose period n lies wholly inside the data:
@@ -27,10 +32,13 @@ WITH w AS (
 ),
 typed AS (
     SELECT 'event' AS cohort_type, event_cohort AS cohort, wallet_id, entry_category, segment_at_entry, scripted,
+           CASE WHEN event_cohort = 'world_cup_2026' THEN CASE WHEN via_world_cup THEN 'via_event_market' ELSE 'other' END
+                WHEN event_cohort = 'us_election_2024' THEN CASE WHEN via_election THEN 'via_event_market' ELSE 'other' END
+                ELSE 'not applicable' END AS entry_channel,
            via_world_cup, via_election, last_observable
     FROM w WHERE event_cohort IS NOT NULL
     UNION ALL
-    SELECT 'month', month_cohort, wallet_id, entry_category, segment_at_entry, scripted,
+    SELECT 'month', month_cohort, wallet_id, entry_category, segment_at_entry, scripted, 'not applicable',
            via_world_cup, via_election, last_observable
     FROM w
 ),
@@ -40,25 +48,25 @@ activity AS (
 ),
 periods AS (SELECT explode(sequence(0, 23)) AS n),
 base AS (
-    SELECT t.cohort_type, t.cohort, t.entry_category, t.segment_at_entry, t.scripted, p.n,
+    SELECT t.cohort_type, t.cohort, t.entry_category, t.segment_at_entry, t.scripted, t.entry_channel, p.n,
            count(*) AS cohort_wallets,
            count_if(t.last_observable >= p.n) AS observable_wallets,
            count_if(t.via_world_cup) AS via_world_cup_wallets,
            count_if(t.via_election) AS via_election_wallets
     FROM typed t CROSS JOIN periods p
-    GROUP BY t.cohort_type, t.cohort, t.entry_category, t.segment_at_entry, t.scripted, p.n
+    GROUP BY t.cohort_type, t.cohort, t.entry_category, t.segment_at_entry, t.scripted, t.entry_channel, p.n
 ),
 active AS (
-    SELECT t.cohort_type, t.cohort, t.entry_category, t.segment_at_entry, t.scripted, a.n,
+    SELECT t.cohort_type, t.cohort, t.entry_category, t.segment_at_entry, t.scripted, t.entry_channel, a.n,
            count(*) AS active_wallets, sum(a.wallet_fills) AS wallet_fills, sum(a.cash_traded) AS cash_traded
     FROM typed t JOIN activity a USING (wallet_id)
     WHERE a.n <= t.last_observable
-    GROUP BY t.cohort_type, t.cohort, t.entry_category, t.segment_at_entry, t.scripted, a.n
+    GROUP BY t.cohort_type, t.cohort, t.entry_category, t.segment_at_entry, t.scripted, t.entry_channel, a.n
 ),
 fine AS (
     SELECT b.*, coalesce(a.active_wallets, 0) AS active_wallets, coalesce(a.wallet_fills, 0) AS wallet_fills,
            coalesce(a.cash_traded, 0) AS cash_traded
-    FROM base b LEFT JOIN active a USING (cohort_type, cohort, entry_category, segment_at_entry, scripted, n)
+    FROM base b LEFT JOIN active a USING (cohort_type, cohort, entry_category, segment_at_entry, scripted, entry_channel, n)
 ),
 cube AS (
     SELECT cohort_type, n,
@@ -66,11 +74,12 @@ cube AS (
            coalesce(entry_category, 'ALL') AS entry_category,
            coalesce(segment_at_entry, 'ALL') AS segment_at_entry,
            coalesce(scripted, 'ALL') AS scripted,
+           coalesce(entry_channel, 'ALL') AS entry_channel,
            sum(cohort_wallets) AS cohort_wallets, sum(observable_wallets) AS observable_wallets,
            sum(active_wallets) AS active_wallets, sum(wallet_fills) AS wallet_fills, sum(cash_traded) AS cash_traded,
            sum(via_world_cup_wallets) AS via_world_cup_wallets, sum(via_election_wallets) AS via_election_wallets
     FROM fine
-    GROUP BY cohort_type, n, CUBE (cohort, entry_category, segment_at_entry, scripted)
+    GROUP BY cohort_type, n, CUBE (cohort, entry_category, segment_at_entry, scripted, entry_channel)
 ),
 shaped AS (
     SELECT *,
@@ -79,7 +88,7 @@ shaped AS (
                        WHEN 'us_election_2024' THEN via_election_wallets END AS via_event
     FROM cube
 )
-SELECT cohort_type, cohort, entry_category, segment_at_entry, scripted, n AS month_n,
+SELECT cohort_type, cohort, entry_category, segment_at_entry, scripted, entry_channel, n AS month_n,
        cohort_wallets,
        CASE WHEN observable_wallets BETWEEN 1 AND 9 THEN NULL ELSE observable_wallets END AS observable_wallets,
        CASE WHEN hide_activity THEN NULL ELSE active_wallets END AS active_wallets,
@@ -89,3 +98,4 @@ SELECT cohort_type, cohort, entry_category, segment_at_entry, scripted, n AS mon
        cohort_type = 'month' AND cohort < '2023-03' AS is_left_censored_cohort
 FROM shaped
 WHERE cohort_wallets >= 10
+  AND (entry_channel = 'ALL' OR (entry_channel != 'not applicable' AND cohort IN ('world_cup_2026', 'us_election_2024')))

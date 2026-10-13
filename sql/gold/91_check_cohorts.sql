@@ -7,7 +7,7 @@ SELECT cohort, segment_at_entry, max(cohort_wallets) AS cohort_wallets,
        round(100 * max(CASE WHEN week_n = 8 THEN active_wallets / observable_wallets END), 2) AS week_8_pct,
        max(CASE WHEN week_n = 8 THEN observable_wallets END) AS observable_week_8
 FROM workspace.polymarket_gold.cohort_retention
-WHERE cohort_type = 'event' AND cohort != 'ALL' AND entry_category = 'ALL' AND scripted = 'ALL'
+WHERE cohort_type = 'event' AND cohort != 'ALL' AND entry_category = 'ALL' AND scripted = 'ALL' AND entry_channel = 'ALL'
   AND segment_at_entry IN ('ALL', 'retail')
 GROUP BY cohort, segment_at_entry ORDER BY cohort, segment_at_entry
 ;
@@ -18,7 +18,7 @@ SELECT cohort, scripted, entry_category, max(cohort_wallets) AS cohort_wallets,
        round(100 * max(CASE WHEN week_n = 4 THEN active_wallets / observable_wallets END), 2) AS week_4_pct,
        round(100 * max(CASE WHEN week_n = 8 THEN active_wallets / observable_wallets END), 2) AS week_8_pct
 FROM workspace.polymarket_gold.cohort_retention
-WHERE cohort_type = 'event' AND segment_at_entry = 'retail'
+WHERE cohort_type = 'event' AND segment_at_entry = 'retail' AND entry_channel = 'ALL'
   AND ((cohort != 'ALL' AND scripted = 'not scripted' AND entry_category = 'ALL')
        OR (cohort = 'world_cup_2026' AND scripted = 'ALL' AND entry_category != 'ALL'))
 GROUP BY cohort, scripted, entry_category ORDER BY cohort, scripted, cohort_wallets DESC
@@ -57,3 +57,26 @@ SELECT listing_type, listing_key, listing_title, category, traders, wallets_acqu
        round(notional_shares / 1e6, 1) AS notional_m, active_life_days
 FROM workspace.polymarket_gold.listing_scorecard
 ORDER BY wallets_acquired DESC NULLS LAST LIMIT 12
+;
+
+-- Retention by entry channel: entered through an event market, or through any other market in
+-- the same window (World Cup and election cohorts), all wallets and retail at entry.
+SELECT cohort, segment_at_entry, entry_channel, max(cohort_wallets) AS cohort_wallets,
+       round(100 * max(CASE WHEN week_n = 1 THEN active_wallets / observable_wallets END), 2) AS week_1_pct,
+       round(100 * max(CASE WHEN week_n = 4 THEN active_wallets / observable_wallets END), 2) AS week_4_pct,
+       round(100 * max(CASE WHEN week_n = 8 THEN active_wallets / observable_wallets END), 2) AS week_8_pct
+FROM workspace.polymarket_gold.cohort_retention
+WHERE cohort_type = 'event' AND cohort != 'ALL' AND entry_category = 'ALL' AND scripted = 'ALL'
+  AND segment_at_entry IN ('ALL', 'retail')
+GROUP BY cohort, segment_at_entry, entry_channel ORDER BY cohort, segment_at_entry, entry_channel
+;
+
+-- Calendar baseline: established wallets active in the window, over the same calendar weeks.
+SELECT cohort, segment, week_n, cohort_wallets, baseline_wallets,
+       round(100 * baseline_week0_share, 2) AS baseline_week0_share_pct,
+       round(100 * cohort_retention, 2) AS cohort_retention_pct,
+       round(100 * baseline_retention, 2) AS baseline_retention_pct,
+       round(relative_retention, 3) AS relative_retention, smallest_week0_group
+FROM workspace.polymarket_gold.cohort_calendar_baseline
+WHERE week_n IN (1, 4, 8)
+ORDER BY cohort, segment, week_n

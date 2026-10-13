@@ -74,6 +74,7 @@ Wallet counts cannot be summed across categories (a wallet can trade several), w
 |---|---|
 | `cohort_type`, `cohort` | `event`: `world_cup_2026` (first fill 11 Jun–19 Jul 2026), `us_election_2024` (28 Sep–5 Nov 2024), `benchmark_q1_2026` (Jan–Mar 2026). `month`: month of first fill (`first_month`). A wallet is in one monthly cohort and at most one event cohort |
 | `entry_category`, `segment_at_entry`, `scripted` | From `dim_wallet` (fixed at acquisition), or `ALL` |
+| `entry_channel` | World Cup and 2024 election cohorts only: `via_event_market` (first fill in a World Cup or 2024 election market) or `other` (entered in the same window through any other market), or `ALL`. Every other cohort has `ALL` only. Also in `cohort_retention_monthly`. Added 13 Oct 2026 as a control |
 | `week_n` | 0–8. Week n covers days 7n to 7n+6 from the wallet's own first fill (decision 27) |
 | `cohort_wallets` | Wallets in the cell |
 | `observable_wallets` | Wallets whose week n lies wholly inside the data: `first_fill_ts + (n+1) × 7 days ≤ 5 Oct 2026 00:00` |
@@ -85,6 +86,8 @@ Wallet counts cannot be summed across categories (a wallet can trade several), w
 Derived in Tableau: **retention (week n)** = `SUM(active_wallets) / SUM(observable_wallets)`; **cash traded per acquired wallet** = `SUM(cash_traded) / SUM(observable_wallets)`. The dashboard reads the `ALL` rows for headline curves and a single value for a split; it does not sum rows. The World Cup cohort is fully observable to week 8 (latest first fill 19 Jul + 63 days = 20 Sep 2026).
 
 **`gold.cohort_retention_monthly`** — the long view. Same dimensions, `ALL` rows and observable-wallets logic as `cohort_retention`, with `month_n` 0–23 instead of `week_n`: period n covers days 30n to 30n+29 from the wallet's own first fill. `observable_wallets` = wallets with `first_fill_ts + (n+1) × 30 days ≤ 5 Oct 2026 00:00`. At most (4 + 49) × 8 × 4 × 3 × 24 ≈ 122,000 rows. The World Cup cohort is observable for periods 0–1 in full and period 2 only for first fills up to 7 Jul 2026; the election cohort for periods 0–22 in full and period 23 only for first fills up to 15 Oct 2024.
+
+**`gold.cohort_calendar_baseline`** — a control added 13 Oct 2026: how much of an event cohort's drop-off is the calendar (the tournament or election ending) rather than the cohort. Grain: `cohort` × `segment` (`ALL`, `retail`) × `week_n` 0–8; 54 rows. Baseline wallets = first seen at least 12 weeks (84 days) before the window opened, with at least one fill inside it. For each cohort entry day d, baseline retention in week n = of the baseline wallets active in d…d+6, the share also active in d+7n…d+7n+6; entry days are weighted by the cohort's entrants, so the baseline is measured over the same calendar weeks as the cohort's own weeks. Columns: `cohort_wallets`, `cohort_active_wallets`, `cohort_retention`, `baseline_wallets`, `baseline_week0_share`, `baseline_retention`, `relative_retention` (= cohort ÷ baseline), `entry_days`, `smallest_week0_group`. Baseline `retail` = never classed as automated in any month from the window's first month to the month of its last day + 62. The cohort side counts weeks from the exact first fill; the baseline side works in whole UTC days.
 
 **`gold.cohort_category_transition`** — grain: `cohort_type` × `cohort` × `entry_category` × `segment_at_entry` × `traded_category`, with `ALL` rows for cohort, entry category and segment at entry computed before suppression. At most (4 + 49) × 8 × 4 × 9 ≈ 15,300 rows.
 
@@ -149,7 +152,7 @@ Applied inside gold, so the live and the exported versions are the same.
 | 2 | `01_wallet_entry_week.sql`, `02_wallet_entry_month.sql` | one scan each of `wallet_fills` joined to `dim_wallet` (stage 2 did this in 28 s) |
 | 3 | `10_dim_week.sql`, `11_annotation.sql`, `12_weekly_kpi.sql`, `13_weekly_market_volume.sql` | from staging; `13` is one scan of `trades` |
 | 4 | **Checkpoint:** weekly KPI numbers against known figures before the cohort tables | — |
-| 5 | `20_cohort_retention.sql`, `21_cohort_retention_monthly.sql`, `22_cohort_category_transition.sql` | from the entry staging tables |
+| 5 | `20_cohort_retention.sql`, `21_cohort_retention_monthly.sql`, `22_cohort_category_transition.sql`, `23_cohort_calendar_baseline.sql` | from the entry staging tables; `23` scans the `wallet_fills` months around each window |
 | 6 | `30_listing_scorecard.sql`, `31_series_month.sql` | one scan of `wallet_fills` (distinct wallets per listing) |
 | 7 | `40_…` methodology tables | small |
 | 8 | Gold tests, then CSV export; brief, README, decision log | small |
