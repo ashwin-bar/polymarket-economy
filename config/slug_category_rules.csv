@@ -1,0 +1,7 @@
+priority,pattern,category,subcategory
+10,(^|-)(temperature|weather|hurricane|earthquakes?)(-|$),Tech & Science,Weather & climate
+20,(^|-)(election|elections|presidential|president|prime-minister|mayor|mayoral|senate|governor|parliament|referendum|nominee|trump|biden|congress)(-|$),Politics,
+25,^(dxy|usd[a-z]{3}|[a-z]{3}usd)-up-or-down,Economy & Finance,Stocks & commodities
+30,(^|-)(bitcoin|btc|ethereum|eth|solana|sol|xrp|doge|dogecoin|zec|crypto|airdrop|fdv|token)(-|$),Crypto,
+40,(^|-)(fed|inflation|cpi|gdp|recession|unemployment|nasdaq|spx|spy|stock|ipo|wti|earnings)(-|$),Economy & Finance,
+50,^(nba|nfl|mlb|nhl|wnba|epl|ucl|uel|mls|cbb|cfb|ncaab|ncaaf|atp|wta|ufc|lol|cs2|dota2|val|f1|ipl|fif|fifwc)-,Sports,

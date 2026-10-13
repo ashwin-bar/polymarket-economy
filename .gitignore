@@ -10,6 +10,7 @@ gold/
 *.duckdb
 *.duckdb.wal
 *.csv
+!config/*.csv
 *.tsv
 *.hyper
 *.tde

@@ -5,6 +5,10 @@
     python scripts/16_load_silver.py wallet                     dim_wallet stage 1 (ids, first and last fill, flags)
     python scripts/16_load_silver.py facts 2024-12 2024-12      trades and wallet_fills, one job per month and table
     python scripts/16_load_silver.py facts 2022-11 2026-10 --tables trades --expected-s 600
+    python scripts/16_load_silver.py market-stats               per-market and per-event totals, slug profile, Gamma pilot
+    python scripts/16_load_silver.py gamma --pilot 10000        Gamma event tags for the 10,000 largest target events
+    python scripts/16_load_silver.py gamma                      Gamma event tags for every one-off event and a sample per series
+    python scripts/16_load_silver.py dim-market [--version v1]  dim_event and dim_market with categories, and test H
 
 The fact load is sequential, oldest month first, and stops at the first failed run or failed
 data quality check. Months already in polymarket_silver.load_log are skipped by the notebook.
@@ -62,8 +66,12 @@ def progress(task_run_id: int) -> tuple | None:
             sum(m.get("write_remote_bytes") or 0 for m in metrics))
 
 
-def run_notebook(notebook: str, params: dict, label: str, expected_s: int) -> dict:
-    """Submit one notebook run, watch it, log it, and return its result (or stop on failure)."""
+def run_notebook(notebook: str, params: dict, label: str, expected_s: int, watch: bool = True) -> dict:
+    """Submit one notebook run, watch it, log it, and return its result (or stop on failure).
+
+    watch=False is for a run that spends long stretches outside Spark (an API fetch), where the
+    query history stands still by design; the timeout is then the only guard.
+    """
     timeout_s = max(MIN_TIMEOUT_S, 3 * expected_s)
     payload = {
         "run_name": f"polymarket silver: {label}",
@@ -89,6 +97,8 @@ def run_notebook(notebook: str, params: dict, label: str, expected_s: int) -> di
             continue  # transient API error; the job itself keeps running
         if run["state"]["life_cycle_state"] in test_c.FINISHED:
             break
+        if not watch:
+            continue
         now = progress(run["tasks"][0]["run_id"])
         if now is not None and now != last_progress:
             last_progress, last_change = now, time.time()
@@ -179,7 +189,35 @@ def facts() -> None:
     print(f"Finished in {(time.time() - started) / 60:.1f} minutes", flush=True)
 
 
-STEPS = {"setup": setup, "wallet": wallet, "facts": facts}
+def market_stats() -> None:
+    save(run_notebook("silver_market_stats", {}, "market stats", expected_s=400), "silver_market_stats")
+
+
+def gamma() -> None:
+    pilot = option(sys.argv, "--pilot")
+    if pilot:
+        save(run_notebook("silver_gamma_events", {"limit_events": pilot}, f"gamma events pilot {pilot}", expected_s=200,
+                          watch=False),
+             "silver_gamma_events_pilot")
+    else:
+        save(run_notebook("silver_gamma_events", {"limit_events": ""}, "gamma events", expected_s=1500, watch=False),
+             "silver_gamma_events")
+
+
+def dim_market() -> None:
+    # The two taxonomy files in config\ are copied next to the notebooks so the job reads the
+    # same versions that are in the repo.
+    test_c.cli("workspace", "mkdirs", f"{WORKSPACE_DIR}/config")
+    for name in ("tag_category_map.csv", "slug_category_rules.csv"):
+        test_c.cli("workspace", "import", f"{WORKSPACE_DIR}/config/{name}", "--file", str(HERE.parent / "config" / name),
+                   "--format", "AUTO", "--overwrite")
+    version = option(sys.argv, "--version") or "v1"
+    save(run_notebook("silver_dim_market", {"taxonomy_version": version}, f"dim_market {version}", expected_s=400),
+         "silver_dim_market")
+
+
+STEPS = {"setup": setup, "wallet": wallet, "facts": facts, "market-stats": market_stats, "gamma": gamma,
+         "dim-market": dim_market}
 
 
 def main() -> None:

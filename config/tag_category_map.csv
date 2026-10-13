@@ -1,0 +1,242 @@
+tag_slug,category,category_priority,subcategory,subcategory_priority
+mention-markets,Culture & Entertainment,10,Mentions & posts,5
+tweets-markets,Culture & Entertainment,10,Mentions & posts,5
+elon-tweets,Culture & Entertainment,10,Mentions & posts,5
+sports,Sports,20,,
+esports,Sports,20,Esports,5
+league-of-legends,Sports,20,Esports,5
+lol,Sports,20,Esports,5
+counter-strike-2,Sports,20,Esports,5
+cs2,Sports,20,Esports,5
+dota-2,Sports,20,Esports,5
+valorant,Sports,20,Esports,5
+soccer,Sports,20,Soccer,10
+fifa-world-cup,Sports,20,Soccer,10
+2026-fifa-world-cup,Sports,20,Soccer,10
+world-cup,Sports,20,Soccer,10
+fifa-friendly,Sports,20,Soccer,10
+EPL,Sports,20,Soccer,10
+premier-league,Sports,20,Soccer,10
+ucl,Sports,20,Soccer,10
+champions-league,Sports,20,Soccer,10
+uel,Sports,20,Soccer,10
+la-liga,Sports,20,Soccer,10
+la-liga-2,Sports,20,Soccer,10
+bundesliga,Sports,20,Soccer,10
+ligue-1,Sports,20,Soccer,10
+sea,Sports,20,Soccer,10
+mls,Sports,20,Soccer,10
+uefa-nations-league,Sports,20,Soccer,10
+uef-qualifiers,Sports,20,Soccer,10
+europa-conference-league,Sports,20,Soccer,10
+brazil-serie-a,Sports,20,Soccer,10
+efl-championship,Sports,20,Soccer,10
+fa-cup,Sports,20,Soccer,10
+saudi-professional-league,Sports,20,Soccer,10
+primeira-liga,Sports,20,Soccer,10
+chinese-super-league,Sports,20,Soccer,10
+concacaf-nations-league,Sports,20,Soccer,10
+africa-cup-of-nations,Sports,20,Soccer,10
+basketball,Sports,20,Basketball,20
+nba,Sports,20,Basketball,20
+wnba,Sports,20,Basketball,20
+ncaa-basketball,Sports,20,Basketball,20
+cbb,Sports,20,Basketball,20
+ncaa-cbb,Sports,20,Basketball,20
+march-madness,Sports,20,Basketball,20
+nfl,Sports,20,American football,20
+cfb,Sports,20,American football,20
+college-football,Sports,20,American football,20
+super-bowl,Sports,20,American football,20
+superbowl,Sports,20,American football,20
+cfp,Sports,20,American football,20
+football,Sports,20,American football,30
+mlb,Sports,20,Baseball,20
+baseball,Sports,20,Baseball,20
+nhl,Sports,20,Hockey,20
+hockey,Sports,20,Hockey,20
+tennis,Sports,20,Tennis,20
+wimbledon,Sports,20,Tennis,20
+atp,Sports,20,Tennis,20
+wta,Sports,20,Tennis,20
+roland-garros,Sports,20,Tennis,20
+ufc,Sports,20,Combat sports,20
+boxing,Sports,20,Combat sports,20
+formula1,Sports,20,Motorsport,20
+f1,Sports,20,Motorsport,20
+cricket,Sports,20,Cricket,20
+international-cricket,Sports,20,Cricket,20
+indian-premier-league,Sports,20,Cricket,20
+golf,Sports,20,Golf,20
+pga-tour,Sports,20,Golf,20
+pga,Sports,20,Golf,20
+the-masters,Sports,20,Golf,20
+olympics,Sports,20,Olympics,25
+crypto,Crypto,30,,
+cryptocurrency,Crypto,30,,
+crypto-prices,Crypto,30,Prices,20
+hit-price,Crypto,30,Prices,20
+bitcoin,Crypto,30,Prices,25
+btc,Crypto,30,Prices,25
+ethereum,Crypto,30,Prices,25
+solana,Crypto,30,Prices,25
+xrp,Crypto,30,Prices,25
+ripple,Crypto,30,Prices,25
+multi-strikes,Crypto,30,Prices,20
+microstrategy,Crypto,30,,
+airdrops,Crypto,30,Tokens & launches,10
+token-sales,Crypto,30,Tokens & launches,10
+token-launch,Crypto,30,Tokens & launches,10
+public-sales,Crypto,30,Tokens & launches,10
+fdv,Crypto,30,Tokens & launches,10
+memecoins,Crypto,30,Tokens & launches,10
+weather,Tech & Science,40,Weather & climate,5
+daily-temperature,Tech & Science,40,Weather & climate,5
+highest-temperature,Tech & Science,40,Weather & climate,5
+global-temp,Tech & Science,40,Weather & climate,5
+climate-science,Tech & Science,40,Weather & climate,5
+climate,Tech & Science,40,Weather & climate,5
+elections,Politics,45,,
+election,Politics,45,,
+main-election,Politics,45,,
+us-presidential-election,Politics,45,US elections,10
+us-elections,Politics,45,US elections,10
+deprec-us-election,Politics,45,US elections,10
+2024-presidential-election,Politics,45,US elections,10
+2024-election,Politics,45,US elections,10
+us-presidential-election-2024,Politics,45,US elections,10
+2024-us-presidential-election,Politics,45,US elections,10
+presidential-election-2024,Politics,45,US elections,10
+primaries,Politics,45,US elections,10
+primary-elections,Politics,45,US elections,10
+republican-primary,Politics,45,US elections,10
+senate-primary,Politics,45,US elections,10
+senate-elections,Politics,45,US elections,10
+house-races,Politics,45,US elections,10
+swing-states,Politics,45,US elections,10
+state-presidential-election,Politics,45,US elections,10
+midterms,Politics,45,US elections,10
+governor-midterms,Politics,45,US elections,10
+nyc-mayor,Politics,45,US elections,10
+mayoral-elections,Politics,45,US elections,10
+nov-4-elections,Politics,45,US elections,10
+margin-of-victory,Politics,45,US elections,10
+popular-vote,Politics,45,US elections,10
+dem-nominee,Politics,45,US elections,10
+world-elections,Politics,45,Non-US elections,20
+global-elections,Politics,45,Non-US elections,20
+international-election-props,Politics,45,Non-US elections,20
+german-election,Politics,45,Non-US elections,20
+canadian-election-2025,Politics,45,Non-US elections,20
+french-elections,Politics,45,Non-US elections,20
+french-election,Politics,45,Non-US elections,20
+israel-election,Politics,45,Non-US elections,20
+hungary-election,Politics,45,Non-US elections,20
+ireland-election,Politics,45,Non-US elections,20
+portugal-election,Politics,45,Non-US elections,20
+dutch-election,Politics,45,Non-US elections,20
+peru-elections,Politics,45,Non-US elections,20
+colombia-election,Politics,45,Non-US elections,20
+south-korea-election,Politics,45,Non-US elections,20
+russia-election,Politics,45,Non-US elections,20
+geopolitics,Politics,45,Geopolitics,30
+middle-east,Politics,45,Geopolitics,30
+iran,Politics,45,Geopolitics,30
+israel,Politics,45,Geopolitics,30
+ukraine,Politics,45,Geopolitics,30
+gaza,Politics,45,Geopolitics,30
+military-strikes,Politics,45,Geopolitics,30
+military-action,Politics,45,Geopolitics,30
+diplomacy-ceasefire,Politics,45,Geopolitics,30
+foreign-policy,Politics,45,Geopolitics,30
+israel-x-iran,Politics,45,Geopolitics,30
+trump-iran,Politics,45,Geopolitics,30
+us-iran,Politics,45,Geopolitics,30
+ceasefire,Politics,45,Geopolitics,30
+peace-deal,Politics,45,Geopolitics,30
+ukraine-peace-deal,Politics,45,Geopolitics,30
+ukraine-map,Politics,45,Geopolitics,30
+strait-of-hormuz,Politics,45,Geopolitics,30
+hezbollah,Politics,45,Geopolitics,30
+hamas,Politics,45,Geopolitics,30
+lebanon,Politics,45,Geopolitics,30
+syria,Politics,45,Geopolitics,30
+yemen,Politics,45,Geopolitics,30
+venezuela,Politics,45,Geopolitics,30
+pop-culture,Culture & Entertainment,48,,
+entertainment,Culture & Entertainment,48,,
+movies,Culture & Entertainment,48,"Film, TV & music",20
+music,Culture & Entertainment,48,"Film, TV & music",20
+box-office,Culture & Entertainment,48,"Film, TV & music",20
+oscars,Culture & Entertainment,48,"Film, TV & music",20
+eurovision,Culture & Entertainment,48,"Film, TV & music",20
+hollywood,Culture & Entertainment,48,"Film, TV & music",20
+film-industry,Culture & Entertainment,48,"Film, TV & music",20
+awards,Culture & Entertainment,48,"Film, TV & music",40
+celebrities,Culture & Entertainment,48,Creators & celebrities,30
+creators,Culture & Entertainment,48,Creators & celebrities,30
+mrbeast,Culture & Entertainment,48,Creators & celebrities,30
+youtube,Culture & Entertainment,48,Creators & celebrities,30
+video-games,Culture & Entertainment,48,,
+poker-game,Culture & Entertainment,48,,
+economy,Economy & Finance,50,,
+finance,Economy & Finance,50,,
+business,Economy & Finance,50,,
+economic-policy,Economy & Finance,50,,
+fomc,Economy & Finance,50,Fed & interest rates,10
+macro-fed,Economy & Finance,50,Fed & interest rates,10
+interest-rates,Economy & Finance,50,Fed & interest rates,10
+Global-Rates,Economy & Finance,50,Fed & interest rates,10
+cpi-release,Economy & Finance,50,Macro indicators,20
+jobs-report,Economy & Finance,50,Macro indicators,20
+macro-indicators,Economy & Finance,50,Macro indicators,20
+stocks,Economy & Finance,50,Stocks & commodities,30
+equities,Economy & Finance,50,Stocks & commodities,30
+commodities,Economy & Finance,50,Stocks & commodities,30
+pre-market,Economy & Finance,50,Stocks & commodities,30
+finance-updown,Economy & Finance,50,Stocks & commodities,30
+ipos,Economy & Finance,50,Stocks & commodities,30
+ipo,Economy & Finance,50,Stocks & commodities,30
+pyth-finance,Economy & Finance,50,Stocks & commodities,30
+nymex-crude-oil-futures,Economy & Finance,50,Stocks & commodities,30
+tech,Tech & Science,60,,
+big-tech,Tech & Science,60,,
+ai,Tech & Science,60,AI,10
+openai,Tech & Science,60,AI,10
+gpt-5,Tech & Science,60,AI,10
+grok,Tech & Science,60,AI,10
+deepseek,Tech & Science,60,AI,10
+gemini-3,Tech & Science,60,AI,10
+claude,Tech & Science,60,AI,10
+anthropic,Tech & Science,60,AI,10
+science,Tech & Science,60,Space & science,20
+spacex,Tech & Science,60,Space & science,20
+politics,Politics,70,,
+world,Politics,70,,
+world-affairs,Politics,70,,
+trump,Politics,70,US politics & policy,40
+trump-presidency,Politics,70,US politics & policy,40
+trump-cabinet,Politics,70,US politics & policy,40
+trump-100-days,Politics,70,US politics & policy,40
+first-100-days,Politics,70,US politics & policy,40
+congress,Politics,70,US politics & policy,40
+gov-shutdown,Politics,70,US politics & policy,40
+us-politics,Politics,70,US politics & policy,40
+uptspt-politics,Politics,70,US politics & policy,40
+courts,Politics,70,US politics & policy,40
+epstein,Politics,70,US politics & policy,40
+fed-rates,Economy & Finance,75,Fed & interest rates,10
+fed,Economy & Finance,75,Fed & interest rates,10
+jerome-powell,Economy & Finance,75,Fed & interest rates,10
+china,Politics,80,,
+russia,Politics,80,,
+europe,Politics,80,,
+eu,Politics,80,,
+uk,Politics,80,,
+canada,Politics,80,,
+brazil,Politics,80,,
+france,Politics,80,,
+germany,Politics,80,,
+south-korea,Politics,80,,
+romania,Politics,80,,
+mexico,Politics,80,,

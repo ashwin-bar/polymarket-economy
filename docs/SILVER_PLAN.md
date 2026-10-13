@@ -4,7 +4,7 @@
 
 Bronze is complete and verified in Databricks (`trades` 1,266,885,846 rows, `users` 2,026,673,731 rows, 48 true-UTC months, `/Volumes/workspace/polymarket/bronze`). Test C and its three follow-ups are done, and the checkpoint decisions are made (World Cup 2026 headline; Jan–Mar 2026 and the 2024 US election as benchmark cohorts). The next layer is silver: typed, chain-timed, deduplicated Delta tables plus the market and wallet dimensions that gold and the three dashboards need. This document is the design for silver.
 
-Approved 13 Oct 2026. Decisions are recorded in the decision log of `docs/PROJECT_BRIEF.md` (9, 23–29).
+Approved 13 Oct 2026. Decisions are recorded in the decision log of `docs/PROJECT_BRIEF.md` (9, 23–29). §4 was revised the same day to describe the taxonomy as built (decisions 31–35).
 
 ---
 
@@ -17,6 +17,8 @@ All managed Delta tables in a new schema `workspace.polymarket_silver` (gold wil
 | `silver_block_anchor` | one anchor block (every 1,000 blocks) | `anchor_block` | 59,074 | none |
 | `silver_dim_date` | one UTC day, 2022-11-21 → 2026-10-04 | `date_utc` | ~1,414 | none |
 | `silver_dim_market` | one market | `market_id` | 4,049,900 | none |
+| `silver_dim_event` | one event (category is decided here) | `event_id` | 1,112,116 | none |
+| `silver_market_month` (staging, kept for gold) | one market × UTC month with fills | `(market_id, month_start)` | 2,786,605 | none |
 | `silver_dim_wallet` | one wallet | `wallet_id` (and `address` unique) | 3,192,135 | none |
 | `silver_trades` | one matched fill (volume) | `(block_number, log_index)` | 1,266,885,846 | `month_start` |
 | `silver_wallet_fills` | one wallet-side of a fill (people) | `(block_number, log_index, role)` — to be tested | 2,026,673,731 | `month_start` |
@@ -28,7 +30,9 @@ All managed Delta tables in a new schema `workspace.polymarket_silver` (gold wil
 
 - `silver_block_anchor`: `anchor_block` bigint, `ts_unix` bigint, `next_ts_unix` bigint (the following anchor's time, so interpolation needs one row).
 - `silver_dim_date`: `date_utc`, `week_start` (Monday), `month_start`, `first_block`, `end_block`, `is_partial_month` (Nov 2022, Oct 2026), `is_v2` (≥ 28 Apr 2026), `is_known_gap` (29–30 Apr 2026), `event_window` (`world_cup_2026` 11 Jun–19 Jul 2026 / `us_election_2024` / `benchmark_q1_2026` / null).
-- `silver_dim_market`: `market_id`, `question`, `slug`, `event_id`, `event_slug`, `event_title`, `closed`, `neg_risk`, `markets_volume`, `source_created_at`, `source_end_date` (kept, labelled unreliable, concern 14); from `silver_trades`: `first_fill_ts`, `last_fill_ts`, `fills`, `notional_shares`, `volume_ratio`, `volume_recon_status` (`within_1pct` / `short` / `over` / `no_fills` / `not_closed`); taxonomy: `category`, `subcategory`, `category_source` (`slug_rule` / `gamma_tag` / `event_sibling` / `uncategorised`), `gamma_tags` array, `is_recurring_series`, `series_key`, `is_world_cup`, `is_us_election_2024`, `taxonomy_version`.
+- `silver_dim_market`: `market_id`, `question`, `slug`, `event_id`, `event_slug`, `event_title`, `closed`, `neg_risk`, `markets_volume`, `source_created_at`, `source_end_date` (kept, labelled unreliable, concern 14); from `silver_trades`: `first_fill_ts`, `last_fill_ts`, `fills`, `notional_shares`, `volume_ratio`, `volume_recon_status` (`within_1pct` / `short` / `over` / `no_fills` / `not_closed`); taxonomy: `category`, `subcategory`, `category_source` (`slug_series` / `gamma_tag` / `slug_keyword` / `uncategorised`), `gamma_tags` array, `gamma_series_slug`, `gamma_series_recurrence`, `is_recurring_series`, `series_key`, `is_world_cup`, `is_us_election_2024`, `taxonomy_version`.
+- `silver_dim_event`: `event_id`, `event_slug`, `event_title`, `markets_in_file`, `traded_markets`, `fills`, `notional_shares`, `first_fill_ts`, `last_fill_ts`, `category`, `subcategory`, `category_source`, `in_gamma`, `gamma_tags`, `gamma_series_slug`, `gamma_series_recurrence`, `is_recurring_series`, `series_key`, `world_cup_candidate`, `is_us_election_2024`, `taxonomy_version`. (`is_world_cup` and the final subcategory are on `silver_dim_market`.)
+- `silver_market_month`: `market_id`, `month_start`, `fills`, `notional_shares`, `usd_amount`, `first_fill_ts`, `last_fill_ts`. Built from `silver_trades`; the market dimension reads it, and gold uses it for volume by market, category and month without rescanning the fills.
 - `silver_dim_wallet`: `wallet_id` bigint, `address`, `first_fill_ts`, `first_date`, `first_month`, `first_market_id`, `entry_category`, `last_date`, `lifetime_fills`, `lifetime_cash_traded`, `first_day_cash`, `first_day_fills`, `is_scripted_cohort`, `is_left_censored` (first seen before 1 Mar 2023, concern 15), `last_seen_v2_eve` (last fill 27 Apr 2026, concern 16), `entered_via_world_cup_market` (first fill in a market with `is_world_cup`), and the entry profile over the wallet's first 30 days from its first fill: `entry_fills`, `entry_maker_share`, `entry_hours_share`, `entry_window_complete` (false when fewer than 30 days of data follow the first fill), `segment_at_entry`.
 - `silver_trades`: `month_start`, `date_utc`, `ts_utc` timestamp, `block_number` bigint, `log_index` int, `market_id`, `maker_wallet_id`, `taker_wallet_id` (null where the address is not in `users`), `price`, `usd_amount`, `token_amount`, `maker_direction`, `taker_direction`, `exchange_version` (V1/V2 from `contract`), `source_timestamp` bigint (audit only).
 - `silver_wallet_fills`: `month_start`, `date_utc`, `ts_utc`, `block_number`, `log_index`, `wallet_id`, `role`, `direction`, `market_id`, `price`, `usd_amount`, `token_amount`.
@@ -54,22 +58,26 @@ All managed Delta tables in a new schema `workspace.polymarket_silver` (gold wil
 ## 4. Market dimension and taxonomy (test H folded in)
 
 **Inputs**
-- `markets.parquet` extracted to `bronze/markets/` by the existing direct route (0.55 GB, inside Databricks).
-- Gamma `/events` (id, slug, `tags[]`, `category`, `subcategory`), fetched once and stored as `bronze/gamma_events/`. First test whether `gamma-api.polymarket.com` is reachable from serverless (same pattern as `scripts/dbx_test_e1_hf_reach.py`); if not, fetch on the laptop within the documented rate limits and upload.
+- `markets.parquet` in `bronze/markets/` (0.55 GB, copied byte-for-byte inside Databricks).
+- `silver_market_month`, from `silver_trades`.
+- Gamma `/events`, fetched by event id from serverless (100 ids per request) and kept slim in `bronze/gamma_events/chunk-NNNN.jsonl` (id, slug, title, tags, series; not the embedded markets or descriptions). Fetched: every traded one-off event, largest notional first, plus the five largest events of each recurring series. The fetch stops before 950 MB received; it covered 160,000 of 219,622 target events (893 MB), and the rest are left unfetched (decision 31).
 
-**Category assignment, in order of precedence**
-1. **Slug rules** for recurring series (`updown`, `up-or-down`, hourly `bitcoin-above` / `ethereum-above`, and others found by volume): set `is_recurring_series`, `series_key`, and the category (Crypto for these).
-2. **Gamma tags** through a curated, versioned map in the repo (`config/tag_category_map.csv`: tag slug → category, subcategory, priority). An event with several tags takes the highest-priority match.
-3. **Event sibling**: a market with no tags inherits its event's category.
+**Category assignment, per event, in order of precedence** (every market takes its event's category)
+1. **`slug_series`**: the event's slug stem (numbers and month names blanked) is shared by 20 or more traded events, so it is a recurring series (`is_recurring_series`, `series_key`). The series takes the most common category among its sampled events, so a series is never split across categories.
+2. **`gamma_tag`**: the event's own tags through `config/tag_category_map.csv` (tag slug → category, category priority, subcategory, subcategory priority). The matched tag with the lowest category priority decides the category; within that category the lowest subcategory priority decides the subcategory.
+3. **`slug_keyword`**: `config/slug_category_rules.csv`, regular expressions on the event slug, first match wins. Only for events with no usable tags.
 4. Otherwise `uncategorised`.
 
-Proposed categories: Sports, Politics, Crypto, Economy & Finance, Culture & Entertainment, Tech & Science, Other, Uncategorised. `is_world_cup` and `is_us_election_2024` are separate flags from tags plus slug patterns. **The actual Gamma tag vocabulary is unverified**; the map is built from the observed top tags by volume, not guessed.
+Categories (taxonomy v1, frozen 13 Oct 2026): Sports, Politics, Crypto, Economy & Finance, Culture & Entertainment, Tech & Science, Uncategorised. Weather is under Tech & Science; mention and tweet-count markets are "Mentions & posts" under Culture & Entertainment; Geopolitics is a Politics subcategory; "Soccer: World Cup 2026" is a Sports subcategory; recurring crypto series are "Recurring price series".
 
-**Test H (coverage check), run before the dimension is final**
+Flags: `is_world_cup` (World Cup tag, `fifwc-` match slug or "world-cup" in the slug; still trading on or after 1 Dec 2025; not a club, cricket, esports, chess or 2030 world cup; friendlies excluded) and `is_us_election_2024` (an explicit 2024-election tag, or a US-election tag on an event whose last fill is before 1 Feb 2025).
+
+Changes from the approved plan: recurring series take their category from Gamma rather than all being Crypto (decision 32); there is no "event sibling" step because category is per event (decision 33).
+
+**Test H (coverage check), run 13 Oct 2026** — results in brief §9 concern 5 and `eda\H_taxonomy_coverage_v1.json`
 - Share of notional shares, of fills and of markets classified, by method and by year, with 2025–26 as the headline figure.
 - Top 50 uncategorised events by notional, to extend the rules.
 - Share of wallets whose first fill is in an uncategorised market (this caps how good "entry category" can be).
-- Checkpoint with you on the result before the taxonomy is frozen.
 
 ## 5. Wallet-month segmentation and the scripted flag
 
@@ -136,7 +144,7 @@ Hard failures stop the load; everything is written to `silver_dq_results`.
 8. Schemas `workspace.polymarket_silver` and `workspace.polymarket_gold`; bronze stays where it is.
 9. Retention in weeks since first fill, capped at week 8 for all cohorts.
 
-Still open: decision 11 (final segment thresholds) after the calibration step; the frozen taxonomy after test H.
+Still open: decision 11 (final segment thresholds) after the calibration step.
 
 ## Verification
 
