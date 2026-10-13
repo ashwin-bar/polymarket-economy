@@ -6,6 +6,7 @@ data/
 bronze/
 silver/
 gold/
+!sql/gold/
 *.parquet
 *.duckdb
 *.duckdb.wal
