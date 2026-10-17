@@ -13,9 +13,14 @@ gold/
 *.csv
 !config/*.csv
 *.tsv
+*.xlsx
+
+# Tableau extracts and packaged files never go in the repo; the .twb (design only) is tracked
 *.hyper
 *.tde
-*.xlsx
+*.twbx
+*.tds
+*.tdsx
 
 # Secrets
 .env

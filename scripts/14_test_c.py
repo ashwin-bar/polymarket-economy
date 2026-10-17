@@ -13,6 +13,7 @@ import bisect
 import csv
 import json
 import math
+import os
 import shutil
 import subprocess
 import sys
@@ -26,12 +27,21 @@ ANCHORS = DATA_ROOT / "lookup" / "block_anchors.csv"
 MONTH_BOUNDS = DATA_ROOT / "lookup" / "month_bounds.csv"
 OUT_CSV = DATA_ROOT / "eda" / "C_wallet_identity_daily.csv"
 OUT_JSON = DATA_ROOT / "eda" / "C_wallet_identity_run.json"
-NOTEBOOK = "/Users/ashwinbarman.work@gmail.com/polymarket-economy/test_c_wallet_identity"
 START, LAST = date(2026, 1, 1), date(2026, 10, 5)  # LAST is the first day after the snapshot ends
 OPEN_END = 10**12
 POLL_SECONDS = 15
 FINISHED = {"TERMINATED", "INTERNAL_ERROR", "SKIPPED"}
 CLI = shutil.which("databricks")
+
+
+def workspace_dir() -> str:
+    """Workspace folder the notebooks are imported into, e.g. /Users/<you>/polymarket-economy.
+    Read from the POLYMARKET_WORKSPACE_DIR environment variable so no user path is in the repo."""
+    path = os.environ.get("POLYMARKET_WORKSPACE_DIR", "").rstrip("/")
+    if not path.startswith("/"):
+        raise SystemExit("Set POLYMARKET_WORKSPACE_DIR to the workspace folder holding the notebooks, "
+                         "e.g. /Users/<you>/polymarket-economy")
+    return path
 
 
 def cli(*args: str, tries: int = 1) -> str:
@@ -81,7 +91,7 @@ def main() -> None:
         "tasks": [{
             "task_key": "test_c",
             "notebook_task": {
-                "notebook_path": NOTEBOOK, "source": "WORKSPACE",
+                "notebook_path": f"{workspace_dir()}/test_c_wallet_identity", "source": "WORKSPACE",
                 "base_parameters": {
                     "start_date": START.isoformat(),
                     "day_first_blocks": ",".join(map(str, day_first_blocks())),

@@ -30,9 +30,11 @@ import csv
 import json
 import time
 
-dbutils.widgets.text("config_dir", "/Workspace/Users/ashwinbarman.work@gmail.com/polymarket-economy/config")  # noqa: F821
+dbutils.widgets.text("config_dir", "")  # noqa: F821 (passed by scripts/16_load_silver.py)
 dbutils.widgets.text("taxonomy_version", "v1")  # noqa: F821
 config_dir, version = dbutils.widgets.get("config_dir"), dbutils.widgets.get("taxonomy_version")  # noqa: F821
+if not config_dir:
+    raise ValueError("config_dir is required: the workspace folder holding the two taxonomy CSVs")
 
 spark.conf.set("spark.sql.session.timeZone", "UTC")  # noqa: F821
 SILVER = "workspace.polymarket_silver"

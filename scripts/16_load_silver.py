@@ -43,7 +43,6 @@ spec = importlib.util.spec_from_file_location("test_c", HERE / "14_test_c.py")
 test_c = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(test_c)  # reuses its Databricks CLI wrapper
 
-WORKSPACE_DIR = "/Users/ashwinbarman.work@gmail.com/polymarket-economy"
 EDA = test_c.DATA_ROOT / "eda"
 RUN_LOG = EDA / "dbx_silver_runs.jsonl"
 MIN_TIMEOUT_S = 1200
@@ -83,7 +82,7 @@ def run_notebook(notebook: str, params: dict, label: str, expected_s: int, watch
         "idempotency_token": f"pm-silver-{label.replace(' ', '-')}-{int(time.time())}",
         "timeout_seconds": timeout_s,
         "tasks": [{"task_key": notebook,
-                   "notebook_task": {"notebook_path": f"{WORKSPACE_DIR}/{notebook}", "source": "WORKSPACE",
+                   "notebook_task": {"notebook_path": f"{test_c.workspace_dir()}/{notebook}", "source": "WORKSPACE",
                                      "base_parameters": params}}],
     }
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
@@ -212,12 +211,14 @@ def gamma() -> None:
 def dim_market() -> None:
     # The two taxonomy files in config\ are copied next to the notebooks so the job reads the
     # same versions that are in the repo.
-    test_c.cli("workspace", "mkdirs", f"{WORKSPACE_DIR}/config")
+    config_dir = f"{test_c.workspace_dir()}/config"
+    test_c.cli("workspace", "mkdirs", config_dir)
     for name in ("tag_category_map.csv", "slug_category_rules.csv"):
-        test_c.cli("workspace", "import", f"{WORKSPACE_DIR}/config/{name}", "--file", str(HERE.parent / "config" / name),
+        test_c.cli("workspace", "import", f"{config_dir}/{name}", "--file", str(HERE.parent / "config" / name),
                    "--format", "AUTO", "--overwrite")
     version = option(sys.argv, "--version") or "v1"
-    save(run_notebook("silver_dim_market", {"taxonomy_version": version}, f"dim_market {version}", expected_s=400),
+    save(run_notebook("silver_dim_market", {"taxonomy_version": version, "config_dir": f"/Workspace{config_dir}"},
+                      f"dim_market {version}", expected_s=400),
          "silver_dim_market")
 
 

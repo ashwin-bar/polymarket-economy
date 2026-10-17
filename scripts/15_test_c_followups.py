@@ -20,7 +20,6 @@ spec = importlib.util.spec_from_file_location("test_c", HERE / "14_test_c.py")
 test_c = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(test_c)  # reuses its Databricks CLI wrapper and day bounds
 
-WORKSPACE_DIR = "/Users/ashwinbarman.work@gmail.com/polymarket-economy"
 OUT_DIR = test_c.DATA_ROOT / "eda"
 
 
@@ -55,7 +54,7 @@ def main() -> None:
         "run_name": f"polymarket test C follow-up: {notebook}",
         "idempotency_token": f"pm-followup-{name}-{int(time.time())}",
         "tasks": [{"task_key": notebook,
-                   "notebook_task": {"notebook_path": f"{WORKSPACE_DIR}/{notebook}", "source": "WORKSPACE",
+                   "notebook_task": {"notebook_path": f"{test_c.workspace_dir()}/{notebook}", "source": "WORKSPACE",
                                      "base_parameters": params}}],
     }
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
